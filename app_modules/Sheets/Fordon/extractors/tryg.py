@@ -16,7 +16,7 @@ import streamlit as st
 COVERAGE_WORDS = [
     "Kasko", "Delkasko", "Ansvar", "Brann", "Tyveri", "Glass", "Redning"
 ]
-COVERAGE_RE = re.compile(r"(kasko|delkasko|ansvar|brann|tyveri|glass|redning)", re.IGNORECASE)
+COVERAGE_RE = re.compile(r"\b(kasko|delkasko|ansvar|brann|tyveri|glass|redning)\b", re.IGNORECASE)
 NUMERIC_FIELDS = {"sum_insured", "deductible", "premium"}
 
 
@@ -178,6 +178,8 @@ def _normalize_number(val: str) -> str:
         return ""
     num = m.group(0).replace(".", " ")
     num = re.sub(r"\s+", " ", num).strip()
+    if re.fullmatch(r"0+", num.replace(" ", "")):
+        return ""
     return num
 
 
@@ -225,7 +227,7 @@ def _extract_key_values(section: str) -> dict:
                     if key == "coverage" and not _is_valid_coverage(val):
                         continue
                     # Avoid header line being treated as a value
-                    if key == "coverage" and re.search(r"vilkår|forsikringssum|egenandel|pris", val, re.IGNORECASE):
+                    if key == "coverage" and re.search(r"vilkår|vilkÃ¥r|vilkar|forsikringssum|egenandel|pris", val, re.IGNORECASE):
                         continue
                     out[key] = val
 
@@ -269,7 +271,7 @@ def _extract_key_values(section: str) -> dict:
                             continue
                     if mapped == "coverage" and not _is_valid_coverage(val):
                         continue
-                    if mapped == "coverage" and re.search(r"vilkår|forsikringssum|egenandel|pris", val, re.IGNORECASE):
+                    if mapped == "coverage" and re.search(r"vilkår|vilkÃ¥r|vilkar|forsikringssum|egenandel|pris", val, re.IGNORECASE):
                         continue
                     out[mapped] = val
 
@@ -403,25 +405,48 @@ def _extract_table_fields(section: str) -> dict:
     ]
     cov_re = "|".join(coverage_words)
 
-    # Try to match a full row with coverage, vilkår code, sum, deductible, premium
-    row_re = re.search(
-        rf'({cov_re})\s+[A-Z]{{2,5}}\d+\s+([\d\s]+)\s+([\d\s]+)\s+([\d\s]+)',
-        section,
-        re.IGNORECASE | re.DOTALL
-    )
+    # Normalize whitespace and reconnect split thousands (e.g., "6\n000" -> "6 000")
+    flat = re.sub(r"(\d)\s*[\r\n]+\s*(\d{3})", r"\1 \2", section)
+    flat = re.sub(r"\s+", " ", flat)
 
-    if row_re:
-        coverage = row_re.group(1).strip()
-        sum_insured = row_re.group(2).strip()
-        deductible = row_re.group(3).strip()
-        premium = row_re.group(4).strip()
-
+    def _try_row(text: str) -> dict:
+        row = re.search(
+            rf'({cov_re})\s+(?:[A-Z]{{2,5}}\d+\s+)?([\d\s]+)\s+([\d\s]+)\s+([\d\s]+)',
+            text,
+            re.IGNORECASE
+        )
+        if not row:
+            return {}
+        coverage = row.group(1).strip()
+        sum_insured = _normalize_number(row.group(2))
+        deductible = _normalize_number(row.group(3))
+        premium = _normalize_number(row.group(4))
+        if not _is_valid_coverage(coverage):
+            return {}
+        if not sum_insured or not deductible:
+            return {}
         return {
             "coverage": coverage,
             "sum_insured": sum_insured,
             "deductible": deductible,
             "premium": premium,
         }
+
+    # First: try after the table header line
+    header = re.search(r"Dekning\s+Vilk[åa]r\s+Forsikringssum\s+Egenandel\s+Pris", flat, re.IGNORECASE)
+    if header:
+        row_text = flat[header.end(): header.end() + 200]
+        found = _try_row(row_text)
+        if found:
+            return found
+
+    # Second: try from the first coverage word
+    cov_match = re.search(COVERAGE_RE, flat)
+    if cov_match:
+        row_text = flat[cov_match.start(): cov_match.start() + 200]
+        found = _try_row(row_text)
+        if found:
+            return found
 
     # Fallback A: table is split by columns (labels + values on separate lines)
     lines = [ln.strip() for ln in section.splitlines() if ln.strip()]
@@ -439,7 +464,16 @@ def _extract_table_fields(section: str) -> dict:
             for j in range(i + 1, min(i + 4, len(lines))):
                 nxt = lines[j].strip()
                 if nxt and _normalize_key(nxt) not in labels:
-                    found[labels[key]] = nxt
+                    mapped = labels[key]
+                    if mapped in NUMERIC_FIELDS:
+                        nxt = _normalize_number(nxt)
+                        if not nxt:
+                            break
+                    if mapped == "coverage" and not _is_valid_coverage(nxt):
+                        break
+                    if mapped == "coverage" and re.search(r"vilkår|vilkÃ¥r|vilkar|forsikringssum|egenandel|pris", nxt, re.IGNORECASE):
+                        break
+                    found[mapped] = nxt
                     break
 
     # Attempt to detect coverage word if still missing
@@ -452,17 +486,21 @@ def _extract_table_fields(section: str) -> dict:
         return found
 
     # Fallback B: coverage word + first three numbers after it
-    cov = re.search(rf'({cov_re})', section, re.IGNORECASE)
+    cov = re.search(rf'({cov_re})', flat, re.IGNORECASE)
     if cov:
-        tail = section[cov.end(): cov.end() + 300]
-        nums = re.findall(r'\b\d{1,3}(?:\s\d{3})+\b|\b\d{3,6}\b', tail)
-        if len(nums) >= 3:
-            return {
-                "coverage": cov.group(1).strip(),
-                "sum_insured": nums[0],
-                "deductible": nums[1],
-                "premium": nums[2],
-            }
+        tail = flat[cov.end(): cov.end() + 200]
+        nums = re.findall(r'\d{1,3}(?:\s\d{3})+|\d{3,6}', tail)
+        if len(nums) >= 2:
+            sum_insured = _normalize_number(nums[0])
+            deductible = _normalize_number(nums[1])
+            premium = _normalize_number(nums[2]) if len(nums) >= 3 else ""
+            if sum_insured and deductible:
+                return {
+                    "coverage": cov.group(1).strip(),
+                    "sum_insured": sum_insured,
+                    "deductible": deductible,
+                    "premium": premium,
+                }
 
     return found
 
