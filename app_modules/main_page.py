@@ -201,12 +201,71 @@ def run():
             st.warning("No pdf_text found. Upload a PDF and run again.")
         else:
             st.write(f"PDF text length: {len(pdf_text)} characters")
-            preview_len = 6000
+            preview_start = st.number_input(
+                "Preview start (char index)",
+                min_value=0,
+                max_value=max(len(pdf_text) - 1, 0),
+                value=0,
+                step=1000
+            )
+            preview_len = st.number_input(
+                "Preview length",
+                min_value=500,
+                max_value=20000,
+                value=6000,
+                step=500
+            )
+            preview_end = min(len(pdf_text), int(preview_start + preview_len))
             st.text_area(
-                "PDF text preview (first 6,000 chars)",
-                value=pdf_text[:preview_len],
+                f"PDF text preview (chars {int(preview_start)}-{preview_end})",
+                value=pdf_text[int(preview_start):preview_end],
                 height=200
             )
+
+            import re
+
+            keyword = st.text_input(
+                "Find keyword in PDF text",
+                placeholder="e.g. Kjennemerke, Fabrikat, Type, Tilhenger"
+            )
+            if keyword:
+                matches = [m.start() for m in re.finditer(re.escape(keyword), pdf_text, flags=re.IGNORECASE)]
+                st.write(f"Found {len(matches)} matches for '{keyword}'")
+                max_hits = st.number_input(
+                    "Max matches to show",
+                    min_value=1,
+                    max_value=20,
+                    value=5,
+                    step=1
+                )
+                context = st.number_input(
+                    "Context size (chars)",
+                    min_value=50,
+                    max_value=1000,
+                    value=300,
+                    step=50
+                )
+                for i, pos in enumerate(matches[:int(max_hits)]):
+                    start = max(0, pos - int(context))
+                    end = min(len(pdf_text), pos + int(context))
+                    st.text_area(
+                        f"Match {i+1} at {pos}",
+                        value=pdf_text[start:end],
+                        height=120
+                    )
+
+            show_regs = st.checkbox("Show registration matches (first 50)", value=False)
+            if show_regs:
+                reg_re = re.compile(r"\\b[A-Z]{2}\\d{4,5}\\b")
+                regs = reg_re.findall(pdf_text)
+                unique = []
+                seen = set()
+                for r in regs:
+                    if r not in seen:
+                        seen.add(r)
+                        unique.append(r)
+                st.write(f"Unique registrations found: {len(unique)}")
+                st.write(unique[:50])
 
             try:
                 from app_modules.Sheets.Fordon.mapping import extract_vehicles_from_pdf
