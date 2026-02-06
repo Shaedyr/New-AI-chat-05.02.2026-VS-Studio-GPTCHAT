@@ -162,10 +162,36 @@ def _extract_key_values(section: str) -> dict:
     """
     Parse key/value lines inside a section, supporting:
     - "Key: Value" on same line
+    - "Key  Value" on same line (no colon)
     - "Key" followed by "Value" on next line
     """
     lines = [ln.strip() for ln in section.splitlines() if ln.strip()]
     out = {}
+
+    # Direct same-line patterns (keeps original characters)
+    label_patterns = [
+        (r"Kjennemerke", "registration"),
+        (r"Registreringsnummer", "registration"),
+        (r"Fabrikat/årsmodell/Type", "make_model_year"),
+        (r"Fabrikat/årsmodell", "make_model_year"),
+        (r"Type", "type"),
+        (r"Forsikringssum\s*kr", "sum_insured"),
+        (r"Forsikringssum", "sum_insured"),
+        (r"Dekning", "coverage"),
+        (r"Egenandel", "deductible"),
+        (r"Pris", "premium"),
+        (r"Årlig kjørelengde", "annual_mileage"),
+        (r"Bonus", "bonus"),
+        (r"Leasing", "leasing"),
+    ]
+
+    for line in lines:
+        for pattern, key in label_patterns:
+            m = re.match(rf"^{pattern}\s*[:\-]?\s*(.+)$", line, re.IGNORECASE)
+            if m:
+                val = m.group(1).strip()
+                if val:
+                    out[key] = val
 
     key_map = {
         "kjennemerke": "registration",
@@ -239,6 +265,43 @@ def _extract_specification_format(pdf_text: str, seen: set) -> list:
                 if not kv.get(k):
                     kv[k] = v
 
+        # Targeted fallbacks for Tryg text variants (handles encoding/spacing)
+        if not kv.get("registration"):
+            reg_match = re.search(
+                r'(?:Kjennemerke|Registreringsnummer)\s*[:\-]?\s*([A-Z]{2}\s?\d{4,5})',
+                section,
+                re.IGNORECASE
+            )
+            if reg_match:
+                kv["registration"] = reg_match.group(1).replace(" ", "")
+
+        if not kv.get("make_model_year"):
+            mm_match = re.search(
+                r'Fabrikat[^\n]*(?:årsmodell|Ã¥rsmodell)\s*[:\-]?\s*([A-Za-zÆØÅæøå0-9\-\s]{3,80})',
+                section,
+                re.IGNORECASE
+            )
+            if mm_match:
+                kv["make_model_year"] = mm_match.group(1).strip()
+
+        if not kv.get("type"):
+            type_match = re.search(
+                r'Type\s*[:\-]?\s*([A-Za-zÆØÅæøå\s\-]+)',
+                section,
+                re.IGNORECASE
+            )
+            if type_match:
+                kv["type"] = type_match.group(1).strip()
+
+        if not kv.get("sum_insured"):
+            sum_match = re.search(
+                r'Forsikringssum\s*(?:kr)?\s*[:\-]?\s*([\d\s]+)',
+                section,
+                re.IGNORECASE
+            )
+            if sum_match:
+                kv["sum_insured"] = sum_match.group(1).strip()
+
         # Registration fallback (if not found via key/value)
         reg = kv.get("registration", "")
         if not reg:
@@ -255,14 +318,6 @@ def _extract_specification_format(pdf_text: str, seen: set) -> list:
         seen.add(reg)
 
         make_model_year = kv.get("make_model_year", "")
-        if not make_model_year:
-            make_match = re.search(
-                r'Fabrikat[^\n]*?(?:\n|:)\s*([A-Za-zÆØÅæøå0-9\-\s]{3,60})',
-                section,
-                re.IGNORECASE
-            )
-            if make_match:
-                make_model_year = make_match.group(1).strip()
         vtype = kv.get("type", "") or m.group("header")
 
         vehicles.append({
@@ -295,25 +350,50 @@ def _extract_table_fields(section: str) -> dict:
 
     # Try to match a full row with coverage, vilkår code, sum, deductible, premium
     row_re = re.search(
-        rf'({cov_re})\s+[A-Z]{{2,4}}\d+\s+([\d\s]+)\s+([\d\s]+)\s+(\d+)',
+        rf'({cov_re})\s+[A-Z]{{2,5}}\d+\s+([\d\s]+)\s+([\d\s]+)\s+([\d\s]+)',
         section,
         re.IGNORECASE | re.DOTALL
     )
 
-    if not row_re:
-        return {}
+    if row_re:
+        coverage = row_re.group(1).strip()
+        sum_insured = row_re.group(2).strip()
+        deductible = row_re.group(3).strip()
+        premium = row_re.group(4).strip()
 
-    coverage = row_re.group(1).strip()
-    sum_insured = row_re.group(2).strip()
-    deductible = row_re.group(3).strip()
-    premium = row_re.group(4).strip()
+        return {
+            "coverage": coverage,
+            "sum_insured": sum_insured,
+            "deductible": deductible,
+            "premium": premium,
+        }
 
-    return {
-        "coverage": coverage,
-        "sum_insured": sum_insured,
-        "deductible": deductible,
-        "premium": premium,
+    # Fallback: table is split by columns (labels + values on separate lines)
+    lines = [ln.strip() for ln in section.splitlines() if ln.strip()]
+    labels = {
+        "dekning": "coverage",
+        "forsikringssum": "sum_insured",
+        "egenandel": "deductible",
+        "pris": "premium",
     }
+    found = {}
+    for i, line in enumerate(lines):
+        key = _normalize_key(line)
+        if key in labels:
+            # next non-empty line is the value
+            for j in range(i + 1, min(i + 4, len(lines))):
+                nxt = lines[j].strip()
+                if nxt and _normalize_key(nxt) not in labels:
+                    found[labels[key]] = nxt
+                    break
+
+    # Attempt to detect coverage word if still missing
+    if "coverage" not in found:
+        cov = re.search(rf'({cov_re})', section, re.IGNORECASE)
+        if cov:
+            found["coverage"] = cov.group(1).strip()
+
+    return found
 
 
 def _extract_overview_format(pdf_text: str, seen: set) -> list:
