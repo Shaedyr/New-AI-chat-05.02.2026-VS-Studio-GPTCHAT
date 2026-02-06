@@ -255,7 +255,16 @@ def _extract_key_values(section: str) -> dict:
             if key in key_map:
                 val = parts[1].strip()
                 if val:
-                    out[key_map[key]] = val
+                    mapped = key_map[key]
+                    if mapped in NUMERIC_FIELDS:
+                        val = _normalize_number(val)
+                        if not val:
+                            continue
+                    if mapped == "coverage" and not _is_valid_coverage(val):
+                        continue
+                    if mapped == "coverage" and re.search(r"vilkår|vilkÃ¥r|vilkar|forsikringssum|egenandel|pris", val, re.IGNORECASE):
+                        continue
+                    out[mapped] = val
                 continue
 
         key = _normalize_key(line)
@@ -304,13 +313,14 @@ def _extract_specification_format(pdf_text: str, seen: set) -> list:
         end = matches[idx + 1].start() if idx + 1 < len(matches) else min(len(pdf_text), m.start() + 8000)
         section = pdf_text[start:end]
 
+        # Trim at common section boundaries to avoid leaking numbers from other parts
+        tail = section[200:]
+        end_mark = re.search(r"(Forsikringsbevis\s*\|\s*Spesifikasjon|Avtalenummer|Side\s+\d+\s+av\s+\d+)", tail, re.IGNORECASE)
+        if end_mark:
+            section = section[:200 + end_mark.start()]
+
         # Extract key/value lines
         kv = _extract_key_values(section)
-        table = _extract_table_fields(section)
-        if table:
-            for k, v in table.items():
-                if not kv.get(k):
-                    kv[k] = v
 
         # Targeted fallbacks for Tryg text variants (handles encoding/spacing)
         if not kv.get("registration"):
@@ -374,6 +384,24 @@ def _extract_specification_format(pdf_text: str, seen: set) -> list:
             continue
         seen.add(reg)
 
+        # Extract table fields near the registration (limits noise)
+        table_context = section
+        reg_pos = section.find(reg)
+        # Prefer the "Kjennemerke <reg>" anchor if present
+        anchor = re.search(rf'Kjennemerke\s*[:\-]?\s*{re.escape(reg)}', section, re.IGNORECASE)
+        if anchor:
+            table_context = section[anchor.start(): anchor.start() + 1200]
+        elif reg_pos != -1:
+            table_context = section[reg_pos: reg_pos + 1200]
+        table = _extract_table_fields(table_context)
+        if table:
+            for k, v in table.items():
+                # Prefer table values for numeric/coverage fields
+                if k in ("sum_insured", "deductible", "premium", "coverage"):
+                    kv[k] = v
+                elif not kv.get(k):
+                    kv[k] = v
+
         make_model_year = kv.get("make_model_year", "")
         vtype = kv.get("type", "") or m.group("header")
 
@@ -410,8 +438,9 @@ def _extract_table_fields(section: str) -> dict:
     flat = re.sub(r"\s+", " ", flat)
 
     def _try_row(text: str) -> dict:
+        num_re = r"\d{1,3}(?:\s\d{3})+|\d{3,6}"
         row = re.search(
-            rf'({cov_re})\s+(?:[A-Z]{{2,5}}\d+\s+)?([\d\s]+)\s+([\d\s]+)\s+([\d\s]+)',
+            rf'({cov_re})\s+(?:[A-Z]{{2,5}}\d+\s+)?({num_re})\s+({num_re})\s+({num_re})',
             text,
             re.IGNORECASE
         )
@@ -433,7 +462,7 @@ def _extract_table_fields(section: str) -> dict:
         }
 
     # First: try after the table header line
-    header = re.search(r"Dekning\s+Vilk[åa]r\s+Forsikringssum\s+Egenandel\s+Pris", flat, re.IGNORECASE)
+    header = re.search(r"Dekning\s+Vilk(?:år|Ã¥r|ar)\s+Forsikringssum\s+Egenandel\s+Pris", flat, re.IGNORECASE)
     if header:
         row_text = flat[header.end(): header.end() + 200]
         found = _try_row(row_text)
