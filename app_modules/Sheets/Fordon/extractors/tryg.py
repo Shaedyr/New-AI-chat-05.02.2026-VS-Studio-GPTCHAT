@@ -233,6 +233,11 @@ def _extract_specification_format(pdf_text: str, seen: set) -> list:
 
         # Extract key/value lines
         kv = _extract_key_values(section)
+        table = _extract_table_fields(section)
+        if table:
+            for k, v in table.items():
+                if not kv.get(k):
+                    kv[k] = v
 
         # Registration fallback (if not found via key/value)
         reg = kv.get("registration", "")
@@ -250,6 +255,14 @@ def _extract_specification_format(pdf_text: str, seen: set) -> list:
         seen.add(reg)
 
         make_model_year = kv.get("make_model_year", "")
+        if not make_model_year:
+            make_match = re.search(
+                r'Fabrikat[^\n]*?(?:\n|:)\s*([A-Za-zÆØÅæøå0-9\-\s]{3,60})',
+                section,
+                re.IGNORECASE
+            )
+            if make_match:
+                make_model_year = make_match.group(1).strip()
         vtype = kv.get("type", "") or m.group("header")
 
         vehicles.append({
@@ -267,6 +280,40 @@ def _extract_specification_format(pdf_text: str, seen: set) -> list:
         })
 
     return vehicles
+
+
+def _extract_table_fields(section: str) -> dict:
+    """
+    Try to parse the coverage row in the specification table.
+    Expected patterns like:
+      Kasko  PAU18255  20 000  6 000  968
+    """
+    coverage_words = [
+        "Kasko", "Delkasko", "Ansvar", "Brann", "Tyveri", "Glass", "Redning"
+    ]
+    cov_re = "|".join(coverage_words)
+
+    # Try to match a full row with coverage, vilkår code, sum, deductible, premium
+    row_re = re.search(
+        rf'({cov_re})\s+[A-Z]{{2,4}}\d+\s+([\d\s]+)\s+([\d\s]+)\s+(\d+)',
+        section,
+        re.IGNORECASE | re.DOTALL
+    )
+
+    if not row_re:
+        return {}
+
+    coverage = row_re.group(1).strip()
+    sum_insured = row_re.group(2).strip()
+    deductible = row_re.group(3).strip()
+    premium = row_re.group(4).strip()
+
+    return {
+        "coverage": coverage,
+        "sum_insured": sum_insured,
+        "deductible": deductible,
+        "premium": premium,
+    }
 
 
 def _extract_overview_format(pdf_text: str, seen: set) -> list:
@@ -390,10 +437,10 @@ def _standardize_vehicle(vehicle: dict) -> dict:
         'year': vehicle.get('year', ''),
         'vehicle_type': vehicle_type,
         'type': vtype,  # Original type for debugging
-        'coverage': '',  # Not extracted from Tryg PDFs
-        'leasing': '',
-        'annual_mileage': '',
-        'bonus': '',
+        'coverage': vehicle.get('coverage', ''),
+        'leasing': vehicle.get('leasing', ''),
+        'annual_mileage': vehicle.get('annual_mileage', ''),
+        'bonus': vehicle.get('bonus', ''),
         'deductible': vehicle.get('deductible', ''),
         'sum_insured': vehicle.get('sum_insured', ''),
         'premium': vehicle.get('premium', ''),

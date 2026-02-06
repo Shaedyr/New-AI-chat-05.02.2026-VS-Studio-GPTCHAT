@@ -157,6 +157,14 @@ def _categorize_vehicles(vehicles: list) -> dict:
         # Check explicit vehicle_type first
         if vtype == "other":
             cat = "other"
+        elif vtype == "trailer":
+            cat = "trailer"
+        elif vtype == "tractor":
+            cat = "tractor"
+        elif vtype == "boat":
+            cat = "boat"
+        elif vtype == "car":
+            cat = "car"
         elif "tilhenger" in vtype or "henger" in vtype:  # Added "henger" for Tryg
             cat = "trailer"
         elif "moped" in vtype:
