@@ -42,9 +42,12 @@ def extract_vehicles_from_pdf(pdf_text: str) -> dict:
     st.write("🔍 **FORDON: Multi-format extraction**")
     st.info("📝 Supports: If Skadeforsikring, Gjensidige, Tryg")  # Updated
     
-    if not pdf_text or len(pdf_text) < 1000:
-        st.error("❌ PDF text too short!")
+    if not pdf_text:
+        st.error("❌ No PDF text!")
         return {}
+
+    if len(pdf_text) < 1000:
+        st.warning("⚠️ PDF text is short; attempting extraction anyway.")
     
     st.write(f"📄 PDF text: {len(pdf_text)} chars")
     st.write("---")
