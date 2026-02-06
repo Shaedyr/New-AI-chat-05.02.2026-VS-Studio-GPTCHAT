@@ -436,6 +436,7 @@ def _extract_table_fields(section: str) -> dict:
     # Normalize whitespace and reconnect split thousands (e.g., "6\n000" -> "6 000")
     flat = re.sub(r"(\d)\s*[\r\n]+\s*(\d{3})", r"\1 \2", section)
     flat = re.sub(r"\s+", " ", flat)
+    lines = [ln.strip() for ln in section.splitlines() if ln.strip()]
 
     def _try_row(text: str) -> dict:
         num_re = r"\d{1,3}(?:\s\d{3})+|\d{3,6}"
@@ -461,7 +462,7 @@ def _extract_table_fields(section: str) -> dict:
             "premium": premium,
         }
 
-    # First: try after the table header line
+    # First: try after the table header line (flattened)
     header = re.search(r"Dekning\s+Vilk(?:år|Ã¥r|ar)\s+Forsikringssum\s+Egenandel\s+Pris", flat, re.IGNORECASE)
     if header:
         row_text = flat[header.end(): header.end() + 200]
@@ -469,7 +470,17 @@ def _extract_table_fields(section: str) -> dict:
         if found:
             return found
 
-    # Second: try from the first coverage word
+    # Second: try after the table header line (line-based)
+    for i, line in enumerate(lines):
+        if re.search(r"Dekning.*Vilk.*Forsikringssum.*Egenandel.*Pris", line, re.IGNORECASE):
+            for j in range(i + 1, min(i + 6, len(lines))):
+                combo = " ".join(lines[j:j + 3])
+                found = _try_row(combo)
+                if found:
+                    return found
+            break
+
+    # Third: try from the first coverage word
     cov_match = re.search(COVERAGE_RE, flat)
     if cov_match:
         row_text = flat[cov_match.start(): cov_match.start() + 200]
@@ -478,7 +489,6 @@ def _extract_table_fields(section: str) -> dict:
             return found
 
     # Fallback A: table is split by columns (labels + values on separate lines)
-    lines = [ln.strip() for ln in section.splitlines() if ln.strip()]
     labels = {
         "dekning": "coverage",
         "forsikringssum": "sum_insured",
