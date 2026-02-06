@@ -12,6 +12,9 @@ from io import BytesIO
 # Most vehicle info is in pages 1-100.
 # Increased to 100 to support Tryg PDFs which have vehicles on later pages.
 MAX_PAGES_TO_READ = 100  # Increased for Tryg support!
+OCR_MIN_TEXT_LENGTH = 1000  # If extracted text is shorter, try OCR fallback
+OCR_MAX_PAGES = 12  # OCR is slow; limit pages for fallback
+OCR_LANG = "nor+eng"
 
 # Companies to IGNORE (insurance brokers, not clients)
 IGNORE_COMPANIES = [
@@ -113,13 +116,58 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
             st.error("❌ No text extracted!")
             st.warning("PDF might be image-based, encrypted, or corrupted")
         
+        # OCR fallback if text is too short (likely scanned PDF)
+        if len(text) < OCR_MIN_TEXT_LENGTH:
+            st.warning("⚠️ Extracted text is short; attempting OCR fallback...")
+            ocr_text = _ocr_text_from_pdf(pdf_bytes, max_pages=OCR_MAX_PAGES)
+            if ocr_text:
+                text = (text + "\n" + ocr_text).strip()
+                st.success(f"✅ OCR added {len(ocr_text)} characters")
+            else:
+                st.warning("⚠️ OCR produced no text")
+
         return text
 
     except Exception as e:
         st.error(f"❌ PDF extraction error: {e}")
         import traceback
         st.code(traceback.format_exc())
+        # Try OCR even if pdfplumber fails
+        ocr_text = _ocr_text_from_pdf(pdf_bytes, max_pages=OCR_MAX_PAGES)
+        if ocr_text:
+            st.success(f"✅ OCR added {len(ocr_text)} characters after error")
+            return ocr_text
         return ""
+
+
+def _ocr_text_from_pdf(pdf_bytes: bytes, max_pages: int = 10) -> str:
+    """Fallback OCR for scanned PDFs."""
+    try:
+        import pytesseract
+        from PIL import Image  # noqa: F401
+    except Exception as e:
+        st.warning(f"⚠️ OCR not available: {e}")
+        return ""
+
+    text = ""
+    try:
+        with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
+            total_pages = len(pdf.pages)
+            pages_to_read = min(max_pages, total_pages)
+            st.info(f"🔎 OCR reading {pages_to_read} page(s)")
+            for i, page in enumerate(pdf.pages[:pages_to_read]):
+                try:
+                    img = page.to_image(resolution=200).original
+                    page_text = pytesseract.image_to_string(img, lang=OCR_LANG)
+                    if page_text:
+                        text += page_text + "\n"
+                except Exception as e:
+                    st.warning(f"⚠️ OCR failed on page {i+1}: {e}")
+    except Exception as e:
+        st.warning(f"⚠️ OCR failed to open PDF: {e}")
+        return ""
+
+    return text.strip()
 
 # ---------------------------------------------------------
 # FIELD EXTRACTION
