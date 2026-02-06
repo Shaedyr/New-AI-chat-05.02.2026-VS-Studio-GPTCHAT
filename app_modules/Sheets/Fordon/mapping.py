@@ -24,11 +24,13 @@ VEHICLE_ROWS = {
 VEHICLE_COLUMNS = {
     "registration": "B",
     "make_model_year": "C",
+    "sum_insured": "D",
     "coverage": "E",
     "leasing": "F",
     "annual_mileage": "G",
-    "bonus": "I",
-    "deductible": "J",
+    "bonus": "H",
+    "deductible": "I",
+    "premium": "J",
 }
 
 

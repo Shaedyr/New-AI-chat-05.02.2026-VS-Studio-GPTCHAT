@@ -24,6 +24,11 @@ def extract_tryg_vehicles(pdf_text: str) -> list:
     vehicles = []
     seen = set()
     
+    # PATTERN 0: Forsikringsbevis / Spesifikasjon format (new)
+    vehicles_spec = _extract_specification_format(pdf_text, seen)
+    vehicles.extend(vehicles_spec)
+    st.write(f"    - Pattern 0 (Specification): {len(vehicles_spec)} vehicles")
+    
     # PATTERN 1: Detailed format with "Kjennemerke" label
     vehicles_detailed = _extract_detailed_format(pdf_text, seen)
     vehicles.extend(vehicles_detailed)
@@ -137,6 +142,130 @@ def _extract_detailed_format(pdf_text: str, seen: set) -> list:
             'source': 'detailed'
         })
     
+    return vehicles
+
+
+def _normalize_key(s: str) -> str:
+    """Normalize keys for comparison (handles Norwegian chars and encoding)."""
+    if not s:
+        return ""
+    s = s.strip().lower()
+    # Handle common encoding artifacts
+    s = s.replace("Ã¥", "a").replace("Ã¸", "o").replace("Ã¦", "ae")
+    s = s.replace("å", "a").replace("ø", "o").replace("æ", "ae")
+    # Remove non-alphanumerics
+    s = re.sub(r"[^a-z0-9]", "", s)
+    return s
+
+
+def _extract_key_values(section: str) -> dict:
+    """
+    Parse key/value lines inside a section, supporting:
+    - "Key: Value" on same line
+    - "Key" followed by "Value" on next line
+    """
+    lines = [ln.strip() for ln in section.splitlines() if ln.strip()]
+    out = {}
+
+    key_map = {
+        "kjennemerke": "registration",
+        "registreringsnummer": "registration",
+        "fabrikatarsmodell": "make_model_year",
+        "fabrikatarsmodelltype": "make_model_year",
+        "type": "type",
+        "forsikringssumkr": "sum_insured",
+        "forsikringssum": "sum_insured",
+        "dekning": "coverage",
+        "egenandel": "deductible",
+        "pris": "premium",
+        "arligkjorelengde": "annual_mileage",
+        "bonus": "bonus",
+        "leasing": "leasing",
+    }
+
+    for i, line in enumerate(lines):
+        # Inline "Key: Value"
+        if ":" in line:
+            parts = line.split(":", 1)
+            key = _normalize_key(parts[0])
+            if key in key_map:
+                val = parts[1].strip()
+                if val:
+                    out[key_map[key]] = val
+                continue
+
+        key = _normalize_key(line)
+        if key in key_map:
+            # Next non-empty line is value
+            if i + 1 < len(lines):
+                val = lines[i + 1].strip()
+                if val:
+                    out[key_map[key]] = val
+
+    return out
+
+
+def _extract_specification_format(pdf_text: str, seen: set) -> list:
+    """
+    Extract vehicles from "Forsikringsbevis | Spesifikasjon" sections.
+
+    Typical structure:
+      Campingvogn og tilhenger - Vilkår PAU18200
+      Kjennemerke: KR3037
+      Fabrikat/årsmodell: TYSSE TYSSE 2013
+      Type: Varetilhenger
+      Forsikringssum kr: 20 000
+      Dekning / Vilkår / Forsikringssum / Egenandel / Pris (table)
+    """
+    vehicles = []
+
+    # Headers that usually denote a vehicle-specific section
+    header_re = re.compile(
+        r"(?P<header>(?:Motorvogn|Personbil|Varebil|Lastebil|Campingvogn og tilhenger|Tilhenger|Traktor|Moped|Motorsykkel|Snøscooter|Båt)[^\n]*?)\s*-\s*Vilkår\s+[A-Z]{2,4}\d+",
+        re.IGNORECASE
+    )
+    matches = list(re.finditer(header_re, pdf_text))
+
+    for idx, m in enumerate(matches):
+        start = m.start()
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else min(len(pdf_text), m.start() + 2500)
+        section = pdf_text[start:end]
+
+        # Extract key/value lines
+        kv = _extract_key_values(section)
+
+        # Registration fallback (if not found via key/value)
+        reg = kv.get("registration", "")
+        if not reg:
+            reg_match = re.search(r"\b([A-Z]{2}\s?\d{4,5})\b", section)
+            if reg_match:
+                reg = reg_match.group(1).replace(" ", "")
+
+        if not reg:
+            continue
+
+        reg = reg.replace(" ", "")
+        if reg in seen:
+            continue
+        seen.add(reg)
+
+        make_model_year = kv.get("make_model_year", "")
+        vtype = kv.get("type", "") or m.group("header")
+
+        vehicles.append({
+            "registration": reg,
+            "make_model_year": make_model_year,
+            "type": vtype,
+            "sum_insured": kv.get("sum_insured", ""),
+            "coverage": kv.get("coverage", ""),
+            "leasing": kv.get("leasing", ""),
+            "annual_mileage": kv.get("annual_mileage", ""),
+            "bonus": kv.get("bonus", ""),
+            "deductible": kv.get("deductible", ""),
+            "premium": kv.get("premium", ""),
+            "source": "specification"
+        })
+
     return vehicles
 
 
