@@ -14,6 +14,7 @@ from io import BytesIO
 MAX_PAGES_TO_READ = 100  # Increased for Tryg support!
 OCR_MIN_TEXT_LENGTH = 1000  # If extracted text is shorter, try OCR fallback
 OCR_MAX_PAGES = 12  # OCR is slow; limit pages for fallback
+OCR_MAX_PAGES_EXTRA = 20  # Extra pages if we detect vehicle lists beyond OCR_MAX_PAGES
 OCR_LANG = "nor+eng"
 
 # Companies to IGNORE (insurance brokers, not clients)
@@ -119,12 +120,22 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
         # OCR fallback if text is too short (likely scanned PDF)
         if len(text) < OCR_MIN_TEXT_LENGTH:
             st.warning("⚠️ Extracted text is short; attempting OCR fallback...")
-            ocr_text = _ocr_text_from_pdf(pdf_bytes, max_pages=OCR_MAX_PAGES)
+            ocr_text = _ocr_text_from_pdf(pdf_bytes, max_pages=OCR_MAX_PAGES, start_page=0)
             if ocr_text:
                 text = (text + "\n" + ocr_text).strip()
                 st.success(f"✅ OCR added {len(ocr_text)} characters")
             else:
                 st.warning("⚠️ OCR produced no text")
+
+            # If the OCR text hints at vehicle lists beyond current page window, try more pages
+            if _needs_more_ocr(text):
+                st.warning("⚠️ Detected vehicle list beyond OCR range; scanning more pages...")
+                extra_text = _ocr_text_from_pdf(pdf_bytes, max_pages=OCR_MAX_PAGES_EXTRA, start_page=OCR_MAX_PAGES)
+                if extra_text:
+                    text = (text + "\n" + extra_text).strip()
+                    st.success(f"✅ Extra OCR added {len(extra_text)} characters")
+                else:
+                    st.warning("⚠️ Extra OCR produced no text")
 
         return text
 
@@ -133,14 +144,14 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
         import traceback
         st.code(traceback.format_exc())
         # Try OCR even if pdfplumber fails
-        ocr_text = _ocr_text_from_pdf(pdf_bytes, max_pages=OCR_MAX_PAGES)
+        ocr_text = _ocr_text_from_pdf(pdf_bytes, max_pages=OCR_MAX_PAGES, start_page=0)
         if ocr_text:
             st.success(f"✅ OCR added {len(ocr_text)} characters after error")
             return ocr_text
         return ""
 
 
-def _ocr_text_from_pdf(pdf_bytes: bytes, max_pages: int = 10) -> str:
+def _ocr_text_from_pdf(pdf_bytes: bytes, max_pages: int = 10, start_page: int = 0) -> str:
     """Fallback OCR for scanned PDFs."""
     try:
         import pytesseract
@@ -153,21 +164,37 @@ def _ocr_text_from_pdf(pdf_bytes: bytes, max_pages: int = 10) -> str:
     try:
         with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
             total_pages = len(pdf.pages)
-            pages_to_read = min(max_pages, total_pages)
-            st.info(f"🔎 OCR reading {pages_to_read} page(s)")
-            for i, page in enumerate(pdf.pages[:pages_to_read]):
+            if start_page >= total_pages:
+                return ""
+            pages_to_read = min(max_pages, total_pages - start_page)
+            st.info(f"🔎 OCR reading {pages_to_read} page(s) from page {start_page + 1}")
+            for i, page in enumerate(pdf.pages[start_page:start_page + pages_to_read]):
                 try:
                     img = page.to_image(resolution=200).original
                     page_text = pytesseract.image_to_string(img, lang=OCR_LANG)
                     if page_text:
                         text += page_text + "\n"
                 except Exception as e:
-                    st.warning(f"⚠️ OCR failed on page {i+1}: {e}")
+                    st.warning(f"⚠️ OCR failed on page {start_page + i + 1}: {e}")
     except Exception as e:
         st.warning(f"⚠️ OCR failed to open PDF: {e}")
         return ""
 
     return text.strip()
+
+
+def _needs_more_ocr(text: str) -> bool:
+    """
+    Heuristic: if OCR text mentions vehicle groups but we still see no registrations,
+    likely the list is on later pages (e.g. "Næringsbil Minigruppe 13").
+    """
+    if not text:
+        return False
+    if re.search(r"Næringsbil|Minigruppe|Motorvogn|Forsikringsbevis", text, re.IGNORECASE):
+        # Detect any registration-like pattern
+        if not re.search(r"\b[A-Z]{2}\s*[-]?\s*\d{4,5}\b", text):
+            return True
+    return False
 
 # ---------------------------------------------------------
 # FIELD EXTRACTION
