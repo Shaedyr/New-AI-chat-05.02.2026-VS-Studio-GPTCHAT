@@ -254,7 +254,7 @@ def _extract_specification_format(pdf_text: str, seen: set) -> list:
 
     for idx, m in enumerate(matches):
         start = m.start()
-        end = matches[idx + 1].start() if idx + 1 < len(matches) else min(len(pdf_text), m.start() + 2500)
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else min(len(pdf_text), m.start() + 8000)
         section = pdf_text[start:end]
 
         # Extract key/value lines
@@ -277,12 +277,22 @@ def _extract_specification_format(pdf_text: str, seen: set) -> list:
 
         if not kv.get("make_model_year"):
             mm_match = re.search(
-                r'Fabrikat[^\n]*(?:årsmodell|Ã¥rsmodell)\s*[:\-]?\s*([A-Za-zÆØÅæøå0-9\-\s]{3,80})',
+                r'Fabrikat[^\n]*(?:årsmodell|arsmodell|Ã¥rsmodell)\s*[:\-]?\s*([A-Za-zÆØÅæøå0-9\-\s]{3,80})',
                 section,
                 re.IGNORECASE
             )
             if mm_match:
                 kv["make_model_year"] = mm_match.group(1).strip()
+        
+        # Fallback: registration followed by make/model/year in same line/window
+        if not kv.get("make_model_year") and kv.get("registration"):
+            reg = kv["registration"]
+            mm_inline = re.search(
+                rf'{re.escape(reg)}\s+([A-Za-zÆØÅæøå0-9\-\s]{{3,60}}?)\s+((?:19|20)\d{{2}})',
+                section
+            )
+            if mm_inline:
+                kv["make_model_year"] = f"{mm_inline.group(1).strip()} {mm_inline.group(2).strip()}"
 
         if not kv.get("type"):
             type_match = re.search(
@@ -368,7 +378,7 @@ def _extract_table_fields(section: str) -> dict:
             "premium": premium,
         }
 
-    # Fallback: table is split by columns (labels + values on separate lines)
+    # Fallback A: table is split by columns (labels + values on separate lines)
     lines = [ln.strip() for ln in section.splitlines() if ln.strip()]
     labels = {
         "dekning": "coverage",
@@ -392,6 +402,22 @@ def _extract_table_fields(section: str) -> dict:
         cov = re.search(rf'({cov_re})', section, re.IGNORECASE)
         if cov:
             found["coverage"] = cov.group(1).strip()
+
+    if found.get("coverage") and (found.get("sum_insured") or found.get("deductible") or found.get("premium")):
+        return found
+
+    # Fallback B: coverage word + first three numbers after it
+    cov = re.search(rf'({cov_re})', section, re.IGNORECASE)
+    if cov:
+        tail = section[cov.end(): cov.end() + 300]
+        nums = re.findall(r'\b\d{1,3}(?:\s\d{3})+\b|\b\d{3,6}\b', tail)
+        if len(nums) >= 3:
+            return {
+                "coverage": cov.group(1).strip(),
+                "sum_insured": nums[0],
+                "deductible": nums[1],
+                "premium": nums[2],
+            }
 
     return found
 
