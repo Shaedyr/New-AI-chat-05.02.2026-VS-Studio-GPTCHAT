@@ -184,6 +184,45 @@ def run():
     pdf_fields = extract_fields_from_pdf(pdf_bytes) if pdf_bytes else {}
 
     # ---------------------------------------------------------
+    # DEBUG: VEHICLE EXTRACTION (optional)
+    # ---------------------------------------------------------
+    debug_vehicles = st.checkbox(
+        "Debug vehicle extraction",
+        value=False,
+        help="Show extracted PDF text snippet and raw vehicle data"
+    )
+
+    if debug_vehicles:
+        st.divider()
+        st.subheader("🔧 Vehicle Extraction Debug")
+
+        pdf_text = pdf_fields.get("pdf_text", "")
+        if not pdf_text:
+            st.warning("No pdf_text found. Upload a PDF and run again.")
+        else:
+            st.write(f"PDF text length: {len(pdf_text)} characters")
+            preview_len = 6000
+            st.text_area(
+                "PDF text preview (first 6,000 chars)",
+                value=pdf_text[:preview_len],
+                height=200
+            )
+
+            try:
+                from app_modules.Sheets.Fordon.mapping import extract_vehicles_from_pdf
+                categorized = extract_vehicles_from_pdf(pdf_text)
+                if categorized:
+                    st.write("Categorized vehicles:")
+                    for cat, items in categorized.items():
+                        st.write(f"- {cat}: {len(items)}")
+                        if items:
+                            st.json(items)
+                else:
+                    st.warning("No vehicles extracted by Fordon parser.")
+            except Exception as e:
+                st.error(f"Vehicle extraction debug failed: {e}")
+
+    # ---------------------------------------------------------
     # MERGE ALL FIELDS
     # ---------------------------------------------------------
     merged_fields = {}
