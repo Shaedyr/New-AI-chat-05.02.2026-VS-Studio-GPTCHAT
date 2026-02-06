@@ -30,7 +30,6 @@ VEHICLE_COLUMNS = {
     "annual_mileage": "G",
     "bonus": "H",
     "deductible": "I",
-    "premium": "J",
 }
 
 

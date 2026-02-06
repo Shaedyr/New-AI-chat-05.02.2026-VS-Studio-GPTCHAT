@@ -13,6 +13,13 @@ import re
 import streamlit as st
 
 
+COVERAGE_WORDS = [
+    "Kasko", "Delkasko", "Ansvar", "Brann", "Tyveri", "Glass", "Redning"
+]
+COVERAGE_RE = re.compile(r"(kasko|delkasko|ansvar|brann|tyveri|glass|redning)", re.IGNORECASE)
+NUMERIC_FIELDS = {"sum_insured", "deductible", "premium"}
+
+
 def extract_tryg_vehicles(pdf_text: str) -> list:
     """
     Extract vehicles from Tryg Forsikring PDF.
@@ -158,6 +165,26 @@ def _normalize_key(s: str) -> str:
     return s
 
 
+def _normalize_number(val: str) -> str:
+    """Extract a clean numeric value like '20 000' or '6 000'."""
+    if not val:
+        return ""
+    tmp = val.lower().replace("kr", "").strip()
+    # If letters remain (other than 'kr'), treat as invalid
+    if re.search(r"[a-zæøå]", tmp):
+        return ""
+    m = re.search(r"\d{1,3}(?:[ .]\d{3})+|\d{3,6}", tmp)
+    if not m:
+        return ""
+    num = m.group(0).replace(".", " ")
+    num = re.sub(r"\s+", " ", num).strip()
+    return num
+
+
+def _is_valid_coverage(val: str) -> bool:
+    return bool(val) and bool(COVERAGE_RE.search(val))
+
+
 def _extract_key_values(section: str) -> dict:
     """
     Parse key/value lines inside a section, supporting:
@@ -191,6 +218,15 @@ def _extract_key_values(section: str) -> dict:
             if m:
                 val = m.group(1).strip()
                 if val:
+                    if key in NUMERIC_FIELDS:
+                        val = _normalize_number(val)
+                        if not val:
+                            continue
+                    if key == "coverage" and not _is_valid_coverage(val):
+                        continue
+                    # Avoid header line being treated as a value
+                    if key == "coverage" and re.search(r"vilkår|forsikringssum|egenandel|pris", val, re.IGNORECASE):
+                        continue
                     out[key] = val
 
     key_map = {
@@ -226,7 +262,16 @@ def _extract_key_values(section: str) -> dict:
             if i + 1 < len(lines):
                 val = lines[i + 1].strip()
                 if val:
-                    out[key_map[key]] = val
+                    mapped = key_map[key]
+                    if mapped in NUMERIC_FIELDS:
+                        val = _normalize_number(val)
+                        if not val:
+                            continue
+                    if mapped == "coverage" and not _is_valid_coverage(val):
+                        continue
+                    if mapped == "coverage" and re.search(r"vilkår|forsikringssum|egenandel|pris", val, re.IGNORECASE):
+                        continue
+                    out[mapped] = val
 
     return out
 
