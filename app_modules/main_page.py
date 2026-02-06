@@ -256,14 +256,21 @@ def run():
 
             show_regs = st.checkbox("Show registration matches (first 50)", value=False)
             if show_regs:
-                reg_re = re.compile(r"\\b[A-Z]{2}\\d{4,5}\\b")
-                regs = reg_re.findall(pdf_text)
-                unique = []
-                seen = set()
-                for r in regs:
-                    if r not in seen:
-                        seen.add(r)
-                        unique.append(r)
+                regs = set()
+
+                # Normal patterns: KR3037, KR 3037, KR-3037
+                for m in re.finditer(r"\\b[A-Z]{2}\\s*[-]?\\s*\\d{4,5}\\b", pdf_text):
+                    reg = re.sub(r"[\\s\\-]+", "", m.group(0)).upper()
+                    if re.fullmatch(r"[A-Z]{2}\\d{4,5}", reg):
+                        regs.add(reg)
+
+                # OCR-spaced patterns: K R 3 0 3 7
+                for m in re.finditer(r"([A-Z]\\s*[A-Z])\\s*([0-9](?:\\s*[0-9]){3,4})", pdf_text):
+                    reg = re.sub(r"\\s+", "", (m.group(1) + m.group(2))).upper()
+                    if re.fullmatch(r"[A-Z]{2}\\d{4,5}", reg):
+                        regs.add(reg)
+
+                unique = sorted(regs)
                 st.write(f"Unique registrations found: {len(unique)}")
                 st.write(unique[:50])
 
