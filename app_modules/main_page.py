@@ -258,20 +258,33 @@ def run():
             if show_regs:
                 regs = set()
 
+                # Strict pattern: KR3037
+                strict = set()
+                for m in re.finditer(r"\\b[A-Z]{2}\\d{4,5}\\b", pdf_text):
+                    strict.add(m.group(0).upper())
+
                 # Normal patterns: KR3037, KR 3037, KR-3037
+                normal = set()
                 for m in re.finditer(r"\\b[A-Z]{2}\\s*[-]?\\s*\\d{4,5}\\b", pdf_text):
                     reg = re.sub(r"[\\s\\-]+", "", m.group(0)).upper()
                     if re.fullmatch(r"[A-Z]{2}\\d{4,5}", reg):
-                        regs.add(reg)
+                        normal.add(reg)
 
-                # OCR-spaced patterns: K R 3 0 3 7
-                for m in re.finditer(r"([A-Z]\\s*[A-Z])\\s*([0-9](?:\\s*[0-9]){3,4})", pdf_text):
-                    reg = re.sub(r"\\s+", "", (m.group(1) + m.group(2))).upper()
+                # OCR-spaced patterns: K R 3 0 3 7 (spaces between chars)
+                spaced = set()
+                for m in re.finditer(r"([A-Z])\\W*([A-Z])\\W*([0-9])\\W*([0-9])\\W*([0-9])\\W*([0-9])(?:\\W*([0-9]))?", pdf_text, re.IGNORECASE):
+                    parts = [p for p in m.groups() if p]
+                    reg = "".join(parts).upper()
                     if re.fullmatch(r"[A-Z]{2}\\d{4,5}", reg):
-                        regs.add(reg)
+                        spaced.add(reg)
+
+                regs.update(strict)
+                regs.update(normal)
+                regs.update(spaced)
 
                 unique = sorted(regs)
                 st.write(f"Unique registrations found: {len(unique)}")
+                st.write(f"  strict: {len(strict)}, normal: {len(normal)}, spaced: {len(spaced)}")
                 st.write(unique[:50])
 
             try:
