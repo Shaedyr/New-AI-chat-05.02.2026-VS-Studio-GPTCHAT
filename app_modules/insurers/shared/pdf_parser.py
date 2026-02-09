@@ -118,9 +118,10 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
             st.warning("PDF might be image-based, encrypted, or corrupted")
         
         # OCR fallback if text is too short (likely scanned PDF)
-        if len(text) < OCR_MIN_TEXT_LENGTH:
-            st.warning("⚠️ Extracted text is short; attempting OCR fallback...")
-            ocr_text = _ocr_text_from_pdf(pdf_bytes, max_pages=OCR_MAX_PAGES, start_page=0)
+        # OR if text contains vehicle-related keywords but no registrations
+        if len(text) < OCR_MIN_TEXT_LENGTH or _needs_ocr_without_regs(text):
+            st.warning("⚠️ Attempting OCR fallback...")
+            ocr_text = _ocr_text_from_pdf(pdf_bytes, max_pages=OCR_MAX_PAGES, start_page=0, resolution=200)
             if ocr_text:
                 text = (text + "\n" + ocr_text).strip()
                 st.success(f"✅ OCR added {len(ocr_text)} characters")
@@ -130,12 +131,27 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
             # If the OCR text hints at vehicle lists beyond current page window, try more pages
             if _needs_more_ocr(text):
                 st.warning("⚠️ Detected vehicle list beyond OCR range; scanning more pages...")
-                extra_text = _ocr_text_from_pdf(pdf_bytes, max_pages=OCR_MAX_PAGES_EXTRA, start_page=OCR_MAX_PAGES)
+                extra_text = _ocr_text_from_pdf(
+                    pdf_bytes,
+                    max_pages=OCR_MAX_PAGES_EXTRA,
+                    start_page=OCR_MAX_PAGES,
+                    resolution=200,
+                )
                 if extra_text:
                     text = (text + "\n" + extra_text).strip()
                     st.success(f"✅ Extra OCR added {len(extra_text)} characters")
                 else:
                     st.warning("⚠️ Extra OCR produced no text")
+
+            # If we still have no registrations but Minigruppe/oversikt exists, run high-res OCR
+            if _needs_highres_ocr(text):
+                st.warning("⚠️ No registrations found; running high-resolution OCR (300 DPI)...")
+                hi_text = _ocr_text_from_pdf(pdf_bytes, max_pages=None, start_page=0, resolution=300)
+                if hi_text:
+                    text = (text + "\n" + hi_text).strip()
+                    st.success(f"✅ High-res OCR added {len(hi_text)} characters")
+                else:
+                    st.warning("⚠️ High-res OCR produced no text")
 
         return text
 
@@ -151,13 +167,38 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
         return ""
 
 
-def _ocr_text_from_pdf(pdf_bytes: bytes, max_pages: int = 10, start_page: int = 0) -> str:
+def _ocr_text_from_pdf(
+    pdf_bytes: bytes,
+    max_pages: int | None = 10,
+    start_page: int = 0,
+    resolution: int = 200,
+) -> str:
     """Fallback OCR for scanned PDFs."""
     try:
         import pytesseract
         from PIL import Image  # noqa: F401
+        import os
+        import shutil
     except Exception as e:
         st.warning(f"⚠️ OCR not available: {e}")
+        return ""
+
+    # Try to locate Tesseract if it's not on PATH
+    if not shutil.which("tesseract"):
+        candidates = [
+            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+        ]
+        for path in candidates:
+            if os.path.exists(path):
+                pytesseract.pytesseract.tesseract_cmd = path
+                break
+
+    # Ensure Tesseract is installed and reachable
+    try:
+        _ = pytesseract.get_tesseract_version()
+    except Exception as e:
+        st.warning(f"⚠️ Tesseract not found. Install it to enable OCR. Details: {e}")
         return ""
 
     text = ""
@@ -166,11 +207,16 @@ def _ocr_text_from_pdf(pdf_bytes: bytes, max_pages: int = 10, start_page: int = 
             total_pages = len(pdf.pages)
             if start_page >= total_pages:
                 return ""
-            pages_to_read = min(max_pages, total_pages - start_page)
-            st.info(f"🔎 OCR reading {pages_to_read} page(s) from page {start_page + 1}")
+            if max_pages is None:
+                pages_to_read = total_pages - start_page
+            else:
+                pages_to_read = min(max_pages, total_pages - start_page)
+            st.info(
+                f"🔎 OCR reading {pages_to_read} page(s) from page {start_page + 1} at {resolution} DPI"
+            )
             for i, page in enumerate(pdf.pages[start_page:start_page + pages_to_read]):
                 try:
-                    img = page.to_image(resolution=200).original
+                    img = page.to_image(resolution=resolution).original
                     page_text = pytesseract.image_to_string(img, lang=OCR_LANG)
                     if page_text:
                         text += page_text + "\n"
@@ -192,8 +238,64 @@ def _needs_more_ocr(text: str) -> bool:
         return False
     if re.search(r"Næringsbil|Minigruppe|Motorvogn|Forsikringsbevis", text, re.IGNORECASE):
         # Detect any registration-like pattern
-        if not re.search(r"\b[A-Z]{2}\s*[-]?\s*\d{4,5}\b", text):
+        if not _has_registrations(text):
             return True
+    return False
+
+
+def _has_registrations(text: str) -> bool:
+    """Return True if we can detect any registration-like tokens in text."""
+    if not text:
+        return False
+    # Prefer strict spaced patterns to avoid false positives like DX 2023
+    for m in re.finditer(r"\b([A-Z]{2})\s+[-]?\s*(\d{4,5})\b", text):
+        digits = m.group(2)
+        if len(digits) == 4 and digits.startswith(("19", "20")):
+            continue
+        return True
+
+    # OCR-spaced patterns: K R 3 0 3 7
+    for m in re.finditer(r"([A-Z])\W*([A-Z])\W*([0-9])\W*([0-9])\W*([0-9])\W*([0-9])(?:\W*([0-9]))?", text, re.IGNORECASE):
+        parts = [p for p in m.groups() if p]
+        reg = "".join(parts).upper()
+        if re.fullmatch(r"[A-Z]{2}\d{4,5}", reg):
+            digits = reg[2:]
+            if len(digits) == 4 and digits.startswith(("19", "20")):
+                continue
+            return True
+    return False
+
+
+def _needs_ocr_without_regs(text: str) -> bool:
+    """
+    Trigger OCR if we see vehicle-related keywords but no registrations.
+    This covers PDFs where text extraction returns TOC/headers but not vehicle tables.
+    """
+    if not text:
+        return False
+    if _has_registrations(text):
+        return False
+    if re.search(r"Næringsbil|Minigruppe|Motorvogn|Uregistrert|Forsikringsbevis", text, re.IGNORECASE):
+        return True
+    return False
+
+
+def _needs_highres_ocr(text: str) -> bool:
+    """
+    Trigger a high-res OCR pass when the document clearly references a vehicle list
+    (e.g. 'Næringsbil Minigruppe' or 'oversikt over kjøretøy') but we still have no registrations.
+    """
+    if not text:
+        return False
+    if re.search(r"Minigruppe|Næringsbil|Neringsbil|Oversikt over kj", text, re.IGNORECASE):
+        # If we already see vehicle brands, assume list is captured
+        brands = [
+            "VOLKSWAGEN", "FORD", "TOYOTA", "MERCEDES", "LAND ROVER",
+            "CITROEN", "PEUGEOT", "VOLVO", "BMW", "AUDI", "NISSAN", "RENAULT"
+        ]
+        if any(b.lower() in text.lower() for b in brands):
+            return False
+        return True
     return False
 
 # ---------------------------------------------------------

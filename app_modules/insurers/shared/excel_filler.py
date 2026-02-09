@@ -1,7 +1,7 @@
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Alignment
 from io import BytesIO
-from app_modules.Sheets.sheet_config import SHEET_MAPPINGS, transform_for_sheet
+from app_modules.insurers.shared.sheet_config import SHEET_MAPPINGS, transform_for_sheet
 import streamlit as st
 
 HEADLINE_COLORS = ["FF0BD7B5", "0BD7B5"]

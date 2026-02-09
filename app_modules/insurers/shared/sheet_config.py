@@ -1,4 +1,4 @@
-# app_modules/Sheets/sheet_config.py
+# app_modules/insurers/shared/sheet_config.py
 """
 Centralized configuration for all Excel sheets.
 This file imports and aggregates all sheet mappings.
@@ -10,8 +10,8 @@ from app_modules.Sheets.Sammendrag.mapping import (
     transform_data as transform_sammendrag
 )
 
-# Import Fordon mapping
-from app_modules.Sheets.Fordon.mapping import (
+# Import Fordon mapping (shared)
+from app_modules.insurers.shared.vehicle_mapping import (
     CELL_MAP as FORDON_MAP,
     transform_data as transform_fordon
 )

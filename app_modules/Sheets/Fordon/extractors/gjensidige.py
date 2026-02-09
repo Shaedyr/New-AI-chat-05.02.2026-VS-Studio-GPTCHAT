@@ -63,14 +63,14 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
 
     # FORMAT 1: BRAND + text + YEAR + REG (with space)
     brands_pattern = '|'.join(brands)
-    pattern1 = rf'({brands_pattern})\s+([A-Z0-9\s\-().]+?)\s+(20\d{{2}})\s+([A-Z]{{2}}\s+\d{{5}})'
+    pattern1 = rf'({brands_pattern})\s+([A-Za-z0-9\s\-().]+?)\s+(20\d{{2}})\s+([A-Z]{{2}}\s*\d{{4,5}})'
 
-    for match in re.finditer(pattern1, pdf_text):
+    for match in re.finditer(pattern1, pdf_text, re.IGNORECASE):
         make = match.group(1).strip()
         model = match.group(2).strip()
         year = match.group(3).strip()
         reg_with_space = match.group(4).strip()
-        reg = reg_with_space.replace(" ", "")
+        reg = re.sub(r"\s+", "", reg_with_space)
 
         if reg in seen:
             continue
@@ -94,16 +94,21 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
         })
 
     # FORMAT 2: All registration numbers (table format)
-    all_regs = re.findall(r'\b([A-Z]{2}\s?\d{5})\b', pdf_text)
+    all_regs = re.findall(r'\b([A-Z]{2}\s?\d{4,5})\b', pdf_text, re.IGNORECASE)
 
     for reg_raw in all_regs:
         reg = reg_raw.replace(" ", "")
 
+        # Skip year-like tokens (e.g., KW 2022, SE 2018) from OCR
+        digits = re.sub(r"\D", "", reg)
+        if len(digits) == 4 and digits.startswith(("19", "20")):
+            continue
+
         if reg in seen:
             continue
 
-        reg_pattern = reg_raw.replace(" ", r"\s?")
-        match = re.search(rf'{reg_pattern}', pdf_text)
+        reg_pattern = re.sub(r"\s+", r"\\s?", reg_raw)
+        match = re.search(rf'{reg_pattern}', pdf_text, re.IGNORECASE)
         if not match:
             continue
 
@@ -114,10 +119,15 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
         found_model = None
         found_year = None
 
+        window_lower = window.lower()
         for brand in brands:
-            if brand in window:
+            if brand.lower() in window_lower:
                 found_brand = brand
-                brand_match = re.search(rf'{brand}\s+([A-Z][A-Za-z0-9\s\-().]+?)(?:\s+20\d{{2}}|\s*\n|$)', window)
+                brand_match = re.search(
+                    rf'{brand}\s+([A-Za-z0-9\s\-().]+?)(?:\s+20\d{{2}}|\s*\n|$)',
+                    window,
+                    re.IGNORECASE,
+                )
                 if brand_match:
                     found_model = brand_match.group(1).strip()
                     found_model = re.sub(r'\s+(Reg\.år|TFA|Årspremie).*$', '', found_model).strip()
@@ -211,15 +221,19 @@ def _extract_unregistered_tractors(pdf_text: str) -> list:
 
     # ---------------------------------------------------------
     # MASKINLØSØRE → Øvrig (B76-B84)
-    # "Maskinløsøre - MASKINLØSØRE 2024 - 62 324 Uregistrert"
+    # OCR variants include: Maskinløsøre, Maskinlosore, MASKINL@S@RE
     # ---------------------------------------------------------
-    maskin_re = r'[Mm]askinl[øo]s[øo]re\s*-\s*MASKINL[ØO]S[ØO]RE\s*(20\d{2})?\s*-'
+    maskin_re = r'maskinl(?:ø|o|0|@)s(?:ø|o|0|@)re'
 
     matches = list(re.finditer(maskin_re, pdf_text, re.IGNORECASE))
     st.write(f"    - MASKINLØSØRE regex matches: {len(matches)}")
 
     for m in matches:
-        year = m.group(1) or ""
+        start = max(0, m.start() - 150)
+        end = min(len(pdf_text), m.end() + 150)
+        window = pdf_text[start:end]
+        year_match = re.search(r"\b(20\d{2})\b", window)
+        year = year_match.group(1) if year_match else ""
 
         if "maskinlosore" in seen_machines:
             continue

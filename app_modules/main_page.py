@@ -7,8 +7,8 @@ from app_modules.company_data import (
     search_brreg_live
 )
 from app_modules.Sheets.Sammendrag.summery_getter import generate_company_summary
-from app_modules.pdf_parser import extract_fields_from_pdf
-from app_modules.Sheets.excel_filler import fill_excel
+from app_modules.insurers.shared.pdf_parser import extract_fields_from_pdf
+from app_modules.insurers.shared.excel_filler import fill_excel
 from app_modules.download import download_excel_file
 
 
@@ -171,7 +171,16 @@ def run():
     # ---------------------------------------------------------
     # STEP 5: PDF UPLOAD
     # ---------------------------------------------------------
-    pdf_bytes = st.file_uploader("Upload PDF (optional)", type=["pdf"])
+    col_pdf, col_provider = st.columns([2, 1])
+    with col_pdf:
+        pdf_bytes = st.file_uploader("Upload PDF (optional)", type=["pdf"])
+    with col_provider:
+        vehicle_provider = st.selectbox(
+            "Vehicle PDF type",
+            ["Auto-detect", "Tryg", "Gjensidige", "If"],
+            index=0,
+            help="Select insurer format for vehicle extraction"
+        )
     
     # ---------------------------------------------------------
     # STEP 6: SUMMARY
@@ -288,7 +297,7 @@ def run():
                 st.write(unique[:50])
 
             try:
-                from app_modules.Sheets.Fordon.mapping import extract_vehicles_from_pdf
+                from app_modules.insurers.shared.vehicle_mapping import extract_vehicles_from_pdf
                 categorized = extract_vehicles_from_pdf(pdf_text)
                 if categorized:
                     st.write("Categorized vehicles:")
@@ -308,6 +317,7 @@ def run():
     merged_fields.update(company_data)
     merged_fields.update(pdf_fields)
     merged_fields["company_summary"] = summary_text
+    merged_fields["vehicle_provider"] = vehicle_provider
 
     st.divider()
     st.subheader("📋 Data Preview")

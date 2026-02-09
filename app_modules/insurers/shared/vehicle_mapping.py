@@ -1,15 +1,15 @@
-# app_modules/Sheets/Fordon/mapping.py
+# app_modules/insurers/shared/vehicle_mapping.py
 """
-FORDON SHEET - MAIN ORCHESTRATOR
+FORDON SHEET - MAIN ORCHESTRATOR (shared)
 
 This file coordinates all vehicle extractors.
 Each insurance company has its own extractor in extractors/
 """
 
 import streamlit as st
-from .extractors.if_skadeforsikring import extract_if_vehicles
-from .extractors.gjensidige import extract_gjensidige_vehicles
-from .extractors.tryg import extract_tryg_vehicles  # NEW: Tryg support
+from app_modules.Sheets.Fordon.extractors.if_skadeforsikring import extract_if_vehicles
+from app_modules.Sheets.Fordon.extractors.gjensidige import extract_gjensidige_vehicles
+from app_modules.Sheets.Fordon.extractors.tryg import extract_tryg_vehicles
 
 
 VEHICLE_ROWS = {
@@ -33,14 +33,14 @@ VEHICLE_COLUMNS = {
 }
 
 
-def extract_vehicles_from_pdf(pdf_text: str) -> dict:
+def extract_vehicles_from_pdf(pdf_text: str, provider: str | None = None) -> dict:
     """
     Main extraction orchestrator.
     Tries all available extractors and combines results.
     """
     
     st.write("🔍 **FORDON: Multi-format extraction**")
-    st.info("📝 Supports: If Skadeforsikring, Gjensidige, Tryg")  # Updated
+    st.info("📝 Supports: If Skadeforsikring, Gjensidige, Tryg")
     
     if not pdf_text:
         st.error("❌ No PDF text!")
@@ -50,6 +50,9 @@ def extract_vehicles_from_pdf(pdf_text: str) -> dict:
         st.warning("⚠️ PDF text is short; attempting extraction anyway.")
     
     st.write(f"📄 PDF text: {len(pdf_text)} chars")
+    provider_norm = (provider or "").strip().lower()
+    if provider_norm:
+        st.write(f"🔀 Provider selected: {provider_norm}")
     st.write("---")
     
     all_vehicles = []
@@ -78,7 +81,7 @@ def extract_vehicles_from_pdf(pdf_text: str) -> dict:
     except Exception as e:
         st.write(f"    ❌ Error: {e}")
     
-    # NEW: Try Tryg Forsikring
+    # Try Tryg Forsikring
     st.write("  🔎 **Tryg Forsikring**")
     try:
         tryg_vehicles = extract_tryg_vehicles(pdf_text)
@@ -167,7 +170,7 @@ def _categorize_vehicles(vehicles: list) -> dict:
             cat = "boat"
         elif vtype == "car":
             cat = "car"
-        elif "tilhenger" in vtype or "henger" in vtype:  # Added "henger" for Tryg
+        elif "tilhenger" in vtype or "henger" in vtype:
             cat = "trailer"
         elif "moped" in vtype:
             cat = "moped"
@@ -202,7 +205,18 @@ def transform_data(extracted: dict) -> dict:
         st.error("❌ No pdf_text!")
         return out
     
-    categorized = extract_vehicles_from_pdf(pdf_text)
+    provider = (extracted.get("vehicle_provider") or "").strip().lower()
+    if provider in ("tryg", "gjensidige", "if", "if skadeforsikring"):
+        st.write(f"🔀 Provider override: {provider}")
+        if provider in ("if", "if skadeforsikring"):
+            vehicles = extract_if_vehicles(pdf_text)
+        elif provider == "gjensidige":
+            vehicles = extract_gjensidige_vehicles(pdf_text)
+        else:
+            vehicles = extract_tryg_vehicles(pdf_text)
+        categorized = _categorize_vehicles(vehicles)
+    else:
+        categorized = extract_vehicles_from_pdf(pdf_text)
     
     if not categorized:
         st.warning("⚠️ No vehicles extracted")

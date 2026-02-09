@@ -13,9 +13,9 @@ st.set_page_config(
 # Clean imports
 from app_modules import main_page
 from app_modules import company_data
-from app_modules import pdf_parser
+from app_modules.insurers.shared import pdf_parser as shared_pdf_parser
 from app_modules.Sheets.Sammendrag import summery_getter as summary
-from app_modules.Sheets import excel_filler
+from app_modules.insurers.shared import excel_filler as shared_excel_filler
 from app_modules import template_loader
 from app_modules import download
 
@@ -24,9 +24,9 @@ PAGES = {
     "🏠 Hovedside": main_page,
     "📄 Input-modul": input_module,
     "🏢 Company Data": company_data,
-    "📄 PDF Parser": pdf_parser,
+    "📄 PDF Parser": shared_pdf_parser,
     "📝 Summary Generator": summary,
-    "📊 Excel Filler": excel_filler,
+    "📊 Excel Filler": shared_excel_filler,
     "📁 Template Loader": template_loader,
     "📥 Download": download,
 }
