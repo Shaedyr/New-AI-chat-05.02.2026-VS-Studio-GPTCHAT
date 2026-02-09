@@ -99,10 +99,10 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
 
     # FORMAT 2: All registration numbers (table format, allow spaced digits)
     all_regs = re.findall(r'\b([A-Z]{2}\s*\d(?:\s?\d){3,4})\b', pdf_text, re.IGNORECASE)
-    context_keywords = [
-        "kjennemerke", "regnr", "registreringsnummer", "fabrikat",
-        "årsmodell", "næringsbil", "minigruppe", "bil"
-    ]
+    context_re = re.compile(
+        r'\b(kjennemerke|reg\.?\s*nr|regnr|registreringsnummer|fabrikat|årsmodell|næringsbil|minigruppe)\b',
+        re.IGNORECASE,
+    )
 
     for reg_raw in all_regs:
         reg = reg_raw.replace(" ", "")
@@ -122,6 +122,7 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
 
         pos = match.start()
         window = pdf_text[max(0, pos-500):min(len(pdf_text), pos+500)]
+        context_window = pdf_text[max(0, pos-120):min(len(pdf_text), pos+120)]
 
         found_brand = None
         found_model = None
@@ -145,7 +146,7 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
         if year_match:
             found_year = year_match.group(1)
 
-        context_hit = any(k in window_lower for k in context_keywords)
+        context_hit = bool(context_re.search(context_window))
 
         if found_brand or context_hit:
             if not found_model:
