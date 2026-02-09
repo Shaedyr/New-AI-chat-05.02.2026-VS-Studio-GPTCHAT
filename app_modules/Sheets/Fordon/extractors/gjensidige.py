@@ -57,13 +57,17 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
     vehicles = []
 
     brands = [
-        "VOLKSWAGEN", "FORD", "TOYOTA", "MERCEDES-BENZ", "LAND ROVER",
-        "CITROEN", "PEUGEOT", "VOLVO", "BMW", "AUDI", "NISSAN", "RENAULT"
+        "VOLKSWAGEN", "FORD", "TOYOTA", "MERCEDES-BENZ", "MERCEDES", "LAND ROVER",
+        "CITROEN", "PEUGEOT", "VOLVO", "BMW", "AUDI", "NISSAN", "RENAULT",
+        "OPEL", "FIAT", "IVECO", "MAN", "SCANIA", "SKODA", "HYUNDAI", "KIA",
+        "MAZDA", "MITSUBISHI", "SUZUKI", "ISUZU", "TESLA", "POLESTAR", "BYD",
+        "MG", "SEAT", "MINI"
     ]
 
-    # FORMAT 1: BRAND + text + YEAR + REG (with space)
+    # FORMAT 1: BRAND + text + YEAR + REG (allow spaced digits)
     brands_pattern = '|'.join(brands)
-    pattern1 = rf'({brands_pattern})\s+([A-Za-z0-9\s\-().]+?)\s+(20\d{{2}})\s+([A-Z]{{2}}\s*\d{{4,5}})'
+    reg_token = r'[A-Z]{2}\s*\d(?:\s?\d){3,4}'
+    pattern1 = rf'({brands_pattern})\s+([A-Za-z0-9\s\-().]+?)\s+(20\d{{2}})\s+({reg_token})'
 
     for match in re.finditer(pattern1, pdf_text, re.IGNORECASE):
         make = match.group(1).strip()
@@ -93,8 +97,12 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
             "deductible": "",
         })
 
-    # FORMAT 2: All registration numbers (table format)
-    all_regs = re.findall(r'\b([A-Z]{2}\s?\d{4,5})\b', pdf_text, re.IGNORECASE)
+    # FORMAT 2: All registration numbers (table format, allow spaced digits)
+    all_regs = re.findall(r'\b([A-Z]{2}\s*\d(?:\s?\d){3,4})\b', pdf_text, re.IGNORECASE)
+    context_keywords = [
+        "kjennemerke", "regnr", "registreringsnummer", "fabrikat",
+        "årsmodell", "næringsbil", "minigruppe", "bil"
+    ]
 
     for reg_raw in all_regs:
         reg = reg_raw.replace(" ", "")
@@ -137,19 +145,22 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
         if year_match:
             found_year = year_match.group(1)
 
-        if found_brand and found_year:
+        context_hit = any(k in window_lower for k in context_keywords)
+
+        if found_brand or context_hit:
             if not found_model:
                 found_model = ""
-            seen.add(reg)
+            make_model = f"{found_brand or ''} {found_model}".strip()
 
+            seen.add(reg)
             leasing = _extract_leasing(window, pdf_text, reg)
             bonus = _extract_bonus(pdf_text, reg)
-            make_model = f"{found_brand} {found_model}".strip()
 
+            make_model_year = f"{make_model} {found_year}".strip()
             vehicles.append({
                 "registration": reg,
                 "vehicle_type": "bil",
-                "make_model_year": f"{make_model} {found_year}",
+                "make_model_year": make_model_year,
                 "coverage": "kasko",
                 "leasing": leasing,
                 "annual_mileage": "",
