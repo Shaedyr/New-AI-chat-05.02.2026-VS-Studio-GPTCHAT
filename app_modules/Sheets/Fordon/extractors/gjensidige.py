@@ -158,10 +158,10 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
             make_model = f"{found_brand or ''} {found_model}".strip()
 
             seen.add(reg)
-        leasing = _extract_leasing(window, pdf_text, reg)
-        bonus = _extract_bonus(pdf_text, reg)
-        sum_insured = _extract_sum_insured(window)
-        annual_mileage = _extract_annual_mileage(window)
+            leasing = _extract_leasing(window, pdf_text, reg)
+            bonus = _extract_bonus(pdf_text, reg)
+            sum_insured = _extract_sum_insured(window)
+            annual_mileage = _extract_annual_mileage(window)
 
             make_model_year = f"{make_model} {found_year}".strip()
             vehicles.append({
