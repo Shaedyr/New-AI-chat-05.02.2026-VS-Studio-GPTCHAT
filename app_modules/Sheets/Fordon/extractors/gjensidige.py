@@ -130,10 +130,11 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
 
         window_lower = window.lower()
         for brand in brands:
-            if brand.lower() in window_lower:
+            brand_re = re.compile(rf'\b{re.escape(brand)}\b', re.IGNORECASE)
+            if brand_re.search(window):
                 found_brand = brand
                 brand_match = re.search(
-                    rf'{brand}\s+([A-Za-z0-9\s\-().]+?)(?:\s+20\d{{2}}|\s*\n|$)',
+                    rf'\b{re.escape(brand)}\b\s+([A-Za-z0-9\s\-().]+?)(?:\s+20\d{{2}}|\s*\n|$)',
                     window,
                     re.IGNORECASE,
                 )
