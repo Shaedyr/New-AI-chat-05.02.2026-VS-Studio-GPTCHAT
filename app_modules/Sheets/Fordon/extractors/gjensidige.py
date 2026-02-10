@@ -85,6 +85,8 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
 
         leasing = _extract_leasing(section, pdf_text, reg)
         bonus = _extract_bonus(pdf_text, reg)
+        sum_insured = _extract_sum_insured(section)
+        annual_mileage = _extract_annual_mileage(section)
 
         vehicles.append({
             "registration": reg,
@@ -92,9 +94,10 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
             "make_model_year": f"{make} {model} {year}",
             "coverage": "kasko",
             "leasing": leasing,
-            "annual_mileage": "",
+            "annual_mileage": annual_mileage,
             "bonus": bonus,
             "deductible": "",
+            "sum_insured": sum_insured,
         })
 
     # FORMAT 2: All registration numbers (table format, allow spaced digits)
@@ -155,8 +158,10 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
             make_model = f"{found_brand or ''} {found_model}".strip()
 
             seen.add(reg)
-            leasing = _extract_leasing(window, pdf_text, reg)
-            bonus = _extract_bonus(pdf_text, reg)
+        leasing = _extract_leasing(window, pdf_text, reg)
+        bonus = _extract_bonus(pdf_text, reg)
+        sum_insured = _extract_sum_insured(window)
+        annual_mileage = _extract_annual_mileage(window)
 
             make_model_year = f"{make_model} {found_year}".strip()
             vehicles.append({
@@ -165,9 +170,10 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
                 "make_model_year": make_model_year,
                 "coverage": "kasko",
                 "leasing": leasing,
-                "annual_mileage": "",
+                "annual_mileage": annual_mileage,
                 "bonus": bonus,
                 "deductible": "",
+                "sum_insured": sum_insured,
             })
 
     return vehicles
@@ -220,15 +226,19 @@ def _extract_unregistered_tractors(pdf_text: str) -> list:
         seen_machines.add(key)
 
         label = f"{brand} {model} {year}".strip()
+        context = pdf_text[max(0, m.start()-800):min(len(pdf_text), m.start()+1200)]
+        sum_insured = _extract_sum_insured(context)
+        annual_mileage = _extract_annual_mileage(context)
         vehicles.append({
             "registration": "Uregistrert",
             "vehicle_type": "traktor",
             "make_model_year": label,
             "coverage": "kasko",
             "leasing": "",
-            "annual_mileage": "",
+            "annual_mileage": annual_mileage,
             "bonus": "",
             "deductible": "",
+            "sum_insured": sum_insured,
         })
         st.write(f"      ✓ Traktor: {label}")
 
@@ -253,15 +263,19 @@ def _extract_unregistered_tractors(pdf_text: str) -> list:
         seen_machines.add("maskinlosore")
 
         label = f"MASKINLØSØRE {year}".strip()
+        context = pdf_text[max(0, m.start()-800):min(len(pdf_text), m.start()+1200)]
+        sum_insured = _extract_sum_insured(context)
+        annual_mileage = _extract_annual_mileage(context)
         vehicles.append({
             "registration": "Uregistrert",
             "vehicle_type": "other",
             "make_model_year": label,
             "coverage": "kasko",
             "leasing": "",
-            "annual_mileage": "",
+            "annual_mileage": annual_mileage,
             "bonus": "",
             "deductible": "",
+            "sum_insured": sum_insured,
         })
         st.write(f"      ✓ Øvrig: {label}")
 
@@ -311,4 +325,39 @@ def _extract_bonus(full_text: str, reg: str) -> str:
     bonus_match = re.search(rf'{reg}:\s*(\d+)%\s*bonus', full_text, re.I)
     if bonus_match:
         return bonus_match.group(1) + "%"
+    return ""
+
+
+def _normalize_digits(value: str) -> str:
+    """Return digits only (removes spaces, dots, commas)."""
+    return re.sub(r"\D", "", value or "").strip()
+
+
+def _extract_sum_insured(text: str) -> str:
+    """Extract Forsikringssum if present."""
+    if not text:
+        return ""
+    match = re.search(
+        r"Forsikringssum\s*(?:kr)?\s*[:\-]?\s*([0-9]{1,3}(?:[\s\.,]?[0-9]{3})+)",
+        text,
+        re.IGNORECASE,
+    )
+    if match:
+        return _normalize_digits(match.group(1))
+    return ""
+
+
+def _extract_annual_mileage(text: str) -> str:
+    """Extract annual mileage or driving time if present."""
+    if not text:
+        return ""
+    match = re.search(
+        r"(?:[AaÅå]rlig\s+)?(?:kj[øo]relengde|kj[øo]retid)\s*"
+        r"(?:inntil|opp\s*til)?\s*([0-9][0-9\s\.,]{2,})\s*"
+        r"(?:km|kilometer|timer)?",
+        text,
+        re.IGNORECASE,
+    )
+    if match:
+        return _normalize_digits(match.group(1))
     return ""
