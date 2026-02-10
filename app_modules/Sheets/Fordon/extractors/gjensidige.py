@@ -99,8 +99,8 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
 
     # FORMAT 2: All registration numbers (table format, allow spaced digits)
     all_regs = re.findall(r'\b([A-Z]{2}\s*\d(?:\s?\d){3,4})\b', pdf_text, re.IGNORECASE)
-    context_re = re.compile(
-        r'\b(kjennemerke|reg\.?\s*nr|regnr|registreringsnummer|fabrikat|årsmodell|næringsbil|minigruppe)\b',
+    label_re = re.compile(
+        r'\b(kjennemerke|reg\.?\s*nr|regnr|registreringsnummer)\b',
         re.IGNORECASE,
     )
 
@@ -146,9 +146,9 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
         if year_match:
             found_year = year_match.group(1)
 
-        context_hit = bool(context_re.search(context_window))
+        label_hit = bool(label_re.search(context_window))
 
-        if found_brand or context_hit:
+        if found_brand or label_hit:
             if not found_model:
                 found_model = ""
             make_model = f"{found_brand or ''} {found_model}".strip()
