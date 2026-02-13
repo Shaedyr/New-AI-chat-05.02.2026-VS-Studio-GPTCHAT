@@ -1,228 +1,227 @@
 # app_modules/Sheets/Fordon/extractors/gjensidige.py
 """
-GJENSIDIGE FORMAT EXTRACTOR
+Gjensidige extractor for Fordon sheet.
 
-ACTUAL OCR output formats:
---------------------------
-CARS:
-  VOLKSWAGEN TRANSPORTER 2020 BU 21895
-  - Sparebank 1 Sør-Norge ASA
-
-TRACTORS:
-  Uregistrert traktor og arb.maskin - Doosan 300 DX 2023 - 24 741 Uregistrert
-  Uregistrert traktor og arb.maskin - Hitachi 300 - 28 346 Uregistrert
-  (OCR may insert © between entries)
-
-MASKINLØSØRE:
-  Maskinløsøre - MASKINLØSØRE 2024 - 62 324 Uregistrert
+Design goals:
+- Keep vehicle detection stable for existing PDFs.
+- Avoid leaking shared values to every row.
+- Populate sum insured / annual mileage only when explicitly found.
 """
+
+from __future__ import annotations
 
 import re
 
 
 MACHINE_BRANDS = [
-    "Doosan", "Hitachi", "Caterpillar", "Liebherr", "Sennebogen",
-    "Komatsu", "Volvo", "JCB", "Bobcat", "Case", "John Deere",
-    "New Holland", "Kubota"
+    "Doosan",
+    "Hitachi",
+    "Caterpillar",
+    "Liebherr",
+    "Sennebogen",
+    "Komatsu",
+    "Volvo",
+    "JCB",
+    "Bobcat",
+    "Case",
+    "John Deere",
+    "New Holland",
+    "Kubota",
 ]
 
 
 def extract_gjensidige_vehicles(pdf_text: str) -> list:
-    """Extract vehicles from Gjensidige PDF."""
-    import streamlit as st
+    """Extract vehicles from a Gjensidige PDF text dump."""
+    vehicles: list[dict] = []
+    seen_registrations: set[str] = set()
 
-    vehicles = []
-    seen_registrations = set()
-
-    # Extract registered cars (UNCHANGED)
-    cars = _extract_registered_cars(pdf_text, seen_registrations)
-    vehicles.extend(cars)
-
-    # Extract tractors + maskinløsøre
-    tractors_and_other = _extract_unregistered_tractors(pdf_text)
-    vehicles.extend(tractors_and_other)
+    vehicles.extend(_extract_registered_cars(pdf_text, seen_registrations))
+    vehicles.extend(_extract_unregistered_tractors(pdf_text))
 
     return vehicles
 
 
-# =============================================================
-# REGISTERED CARS - UNCHANGED
-# =============================================================
-def _extract_registered_cars(pdf_text: str, seen: set) -> list:
+def _extract_registered_cars(pdf_text: str, seen: set[str]) -> list:
     """
-    Extract registered cars from TWO formats:
-    1. "VOLKSWAGEN TRANSPORTER 2020 BU 21895"
-    2. Table rows with registration numbers
+    Extract registered cars from two common OCR formats:
+    1) "VOLKSWAGEN TRANSPORTER 2020 BU 21895"
+    2) Table rows where reg numbers appear with spaces.
     """
-    vehicles = []
+    vehicles: list[dict] = []
 
     brands = [
-        "VOLKSWAGEN", "FORD", "TOYOTA", "MERCEDES-BENZ", "MERCEDES", "LAND ROVER",
-        "CITROEN", "PEUGEOT", "VOLVO", "BMW", "AUDI", "NISSAN", "RENAULT",
-        "OPEL", "FIAT", "IVECO", "MAN", "SCANIA", "SKODA", "HYUNDAI", "KIA",
-        "MAZDA", "MITSUBISHI", "SUZUKI", "ISUZU", "TESLA", "POLESTAR", "BYD",
-        "MG", "SEAT", "MINI"
+        "VOLKSWAGEN",
+        "FORD",
+        "TOYOTA",
+        "MERCEDES-BENZ",
+        "MERCEDES",
+        "LAND ROVER",
+        "CITROEN",
+        "PEUGEOT",
+        "VOLVO",
+        "BMW",
+        "AUDI",
+        "NISSAN",
+        "RENAULT",
+        "OPEL",
+        "FIAT",
+        "IVECO",
+        "MAN",
+        "SCANIA",
+        "SKODA",
+        "HYUNDAI",
+        "KIA",
+        "MAZDA",
+        "MITSUBISHI",
+        "SUZUKI",
+        "ISUZU",
+        "TESLA",
+        "POLESTAR",
+        "BYD",
+        "MG",
+        "SEAT",
+        "MINI",
     ]
 
-    # Global fallback for Minigruppe documents where coverage is shared for all cars.
-    global_car_sum_insured = _extract_minigruppe_sum_insured(pdf_text)
-    global_car_mileage = _extract_minigruppe_mileage(pdf_text)
-
-    # FORMAT 1: BRAND + text + YEAR + REG (allow spaced digits)
-    brands_pattern = '|'.join(brands)
-    reg_token = r'[A-Z]{2}\s*\d(?:\s?\d){3,4}'
-    pattern1 = rf'({brands_pattern})\s+([A-Za-z0-9\s\-().]+?)\s+(20\d{{2}})\s+({reg_token})'
+    brands_pattern = "|".join(brands)
+    reg_token = r"[A-Z]{2}\s*\d(?:\s?\d){3,4}"
+    pattern1 = rf"({brands_pattern})\s+([A-Za-z0-9\s\-().]+?)\s+(20\d{{2}})\s+({reg_token})"
 
     for match in re.finditer(pattern1, pdf_text, re.IGNORECASE):
         make = match.group(1).strip()
         model = match.group(2).strip()
         year = match.group(3).strip()
-        reg_with_space = match.group(4).strip()
-        reg = re.sub(r"\s+", "", reg_with_space)
+        reg = re.sub(r"\s+", "", match.group(4).strip())
 
         if reg in seen:
             continue
         seen.add(reg)
 
         pos = match.start()
-        section = pdf_text[max(0, pos-200):min(len(pdf_text), pos+500)]
+        section = _slice_context(pdf_text, pos, before=200, after=500)
 
-        leasing = _extract_leasing(section, pdf_text, reg)
-        bonus = _extract_bonus(pdf_text, reg)
-        sum_insured = _extract_sum_insured(section) or global_car_sum_insured
-        annual_mileage = _extract_annual_mileage(section) or global_car_mileage
+        vehicles.append(
+            {
+                "registration": reg,
+                "vehicle_type": "bil",
+                "make_model_year": f"{make} {model} {year}",
+                "coverage": "kasko",
+                "leasing": _extract_leasing(section, pdf_text, reg),
+                "annual_mileage": _extract_annual_mileage(section),
+                "bonus": _extract_bonus(pdf_text, reg),
+                "deductible": "",
+                "sum_insured": _extract_sum_insured(section),
+            }
+        )
 
-        vehicles.append({
-            "registration": reg,
-            "vehicle_type": "bil",
-            "make_model_year": f"{make} {model} {year}",
-            "coverage": "kasko",
-            "leasing": leasing,
-            "annual_mileage": annual_mileage,
-            "bonus": bonus,
-            "deductible": "",
-            "sum_insured": sum_insured,
-        })
-
-    # FORMAT 2: All registration numbers (table format, allow spaced digits)
-    all_regs = re.findall(r'\b([A-Z]{2}\s*\d(?:\s?\d){3,4})\b', pdf_text, re.IGNORECASE)
-    label_re = re.compile(
-        r'\b(kjennemerke|reg\.?\s*nr|regnr|registreringsnummer)\b',
-        re.IGNORECASE,
-    )
+    all_regs = re.findall(r"\b([A-Z]{2}\s*\d(?:\s?\d){3,4})\b", pdf_text, re.IGNORECASE)
+    label_re = re.compile(r"\b(kjennemerke|reg\.?\s*nr|regnr|registreringsnummer)\b", re.IGNORECASE)
 
     for reg_raw in all_regs:
         reg = reg_raw.replace(" ", "")
 
-        # Skip year-like tokens (e.g., KW 2022, SE 2018) from OCR
         digits = re.sub(r"\D", "", reg)
         if len(digits) == 4 and digits.startswith(("19", "20")):
             continue
-
         if reg in seen:
             continue
 
         reg_pattern = re.sub(r"\s+", r"\\s?", reg_raw)
-        match = re.search(rf'{reg_pattern}', pdf_text, re.IGNORECASE)
-        if not match:
+        reg_match = re.search(rf"{reg_pattern}", pdf_text, re.IGNORECASE)
+        if not reg_match:
             continue
 
-        pos = match.start()
-        window = pdf_text[max(0, pos-500):min(len(pdf_text), pos+500)]
-        context_window = pdf_text[max(0, pos-120):min(len(pdf_text), pos+120)]
+        pos = reg_match.start()
+        window = _slice_context(pdf_text, pos, before=500, after=500)
+        context_window = _slice_context(pdf_text, pos, before=120, after=120)
 
-        found_brand = None
-        found_model = None
-        found_year = None
+        found_brand = ""
+        found_model = ""
+        found_year = ""
 
-        window_lower = window.lower()
         for brand in brands:
-            brand_re = re.compile(rf'\b{re.escape(brand)}\b', re.IGNORECASE)
-            if brand_re.search(window):
-                found_brand = brand
-                brand_match = re.search(
-                    rf'\b{re.escape(brand)}\b\s+([A-Za-z0-9\s\-().]+?)(?:\s+20\d{{2}}|\s*\n|$)',
-                    window,
-                    re.IGNORECASE,
-                )
-                if brand_match:
-                    found_model = brand_match.group(1).strip()
-                    found_model = re.sub(r'\s+(Reg\.år|TFA|Årspremie).*$', '', found_model).strip()
-                break
+            if not re.search(rf"\b{re.escape(brand)}\b", window, re.IGNORECASE):
+                continue
+            found_brand = brand
+            brand_match = re.search(
+                rf"\b{re.escape(brand)}\b\s+([A-Za-z0-9\s\-().]+?)(?:\s+20\d{{2}}|\s*\n|$)",
+                window,
+                re.IGNORECASE,
+            )
+            if brand_match:
+                found_model = brand_match.group(1).strip()
+                found_model = re.sub(r"\s+(Reg\.\w+|TFA|\w*rspremie).*$", "", found_model).strip()
+            break
 
-        year_match = re.search(r'\b(20\d{2})\b', window)
+        year_match = re.search(r"\b(20\d{2})\b", window)
         if year_match:
             found_year = year_match.group(1)
 
         label_hit = bool(label_re.search(context_window))
+        if not (found_brand or label_hit):
+            continue
 
-        if found_brand or label_hit:
-            if not found_model:
-                found_model = ""
-            make_model = f"{found_brand or ''} {found_model}".strip()
+        make_model = f"{found_brand} {found_model}".strip()
+        make_model_year = f"{make_model} {found_year}".strip()
 
-            seen.add(reg)
-            leasing = _extract_leasing(window, pdf_text, reg)
-            bonus = _extract_bonus(pdf_text, reg)
-            sum_insured = _extract_sum_insured(window) or global_car_sum_insured
-            annual_mileage = _extract_annual_mileage(window) or global_car_mileage
-
-            make_model_year = f"{make_model} {found_year}".strip()
-            vehicles.append({
+        seen.add(reg)
+        vehicles.append(
+            {
                 "registration": reg,
                 "vehicle_type": "bil",
                 "make_model_year": make_model_year,
                 "coverage": "kasko",
-                "leasing": leasing,
-                "annual_mileage": annual_mileage,
-                "bonus": bonus,
+                "leasing": _extract_leasing(window, pdf_text, reg),
+                "annual_mileage": _extract_annual_mileage(window),
+                "bonus": _extract_bonus(pdf_text, reg),
                 "deductible": "",
-                "sum_insured": sum_insured,
-            })
+                "sum_insured": _extract_sum_insured(window),
+            }
+        )
 
     return vehicles
 
 
-# =============================================================
-# TRACTORS + MASKINLØSØRE - REWRITTEN with correct patterns
-# =============================================================
 def _extract_unregistered_tractors(pdf_text: str) -> list:
     """
-    Actual OCR formats:
-      "Uregistrert traktor og arb.maskin - Doosan 300 DX 2023 - 24 741 Uregistrert"
-      "Uregistrert traktor og arb.maskin - Hitachi 300 - 28 346 Uregistrert"
-      "Maskinløsøre - MASKINLØSØRE 2024 - 62 324 Uregistrert"
+    Extract unregistered tractors + MASKINLOSORE.
 
-    Key: price (24 741) sits between dash and final "Uregistrert".
-    We capture brand + model + optional year, then stop at " - ".
+    Typical overview format:
+    "Uregistrert traktor og arb.maskin - Hitachi 300 - 28 346 Uregistrert"
     """
     import streamlit as st
 
-    vehicles = []
-    seen_machines = set()
+    vehicles: list[dict] = []
+    seen_machines: set[str] = set()
 
-    st.write("    🔍 **DEBUG: Tractors...**")
+    st.write("    DEBUG: Tractors...")
 
     found_brands = [b for b in MACHINE_BRANDS if b.lower() in pdf_text.lower()]
-    has_maskinlosore = 'maskinløsøre' in pdf_text.lower()
-    st.write(f"    - Brands: {', '.join(found_brands) if found_brands else 'NONE'} | maskinløsøre: {has_maskinlosore}")
+    has_maskinlosore = bool(
+        re.search(
+            r"maskinl(?:\u00f8|o|0|@|\?|\u00c3\u00b8)s(?:\u00f8|o|0|@|\?|\u00c3\u00b8)re",
+            pdf_text,
+            re.IGNORECASE,
+        )
+    )
+    st.write(
+        f"    - Brands: {', '.join(found_brands) if found_brands else 'NONE'}"
+        f" | maskinlosore: {has_maskinlosore}"
+    )
 
-    # ---------------------------------------------------------
-    # TRACTORS
-    # "Uregistrert traktor og arb.maskin - BRAND MODEL [YEAR] - PRICE Uregistrert"
-    # Capture brand, then everything up to next " - "
-    # ---------------------------------------------------------
-    brands_alt = '|'.join(found_brands) if found_brands else '|'.join(MACHINE_BRANDS)
-
-    tractor_re = rf'[Uu]registrert\s+traktor\s+og\s+arb\.?maskin\s*-\s*({brands_alt})\s+([\w\s]+?)\s*(?:(20\d{{2}})\s*)?-'
+    brands_alt = "|".join(found_brands) if found_brands else "|".join(MACHINE_BRANDS)
+    tractor_re = (
+        rf"[Uu]registrert\s+traktor\s+og\s+arb\.?maskin\s*-\s*"
+        rf"({brands_alt})\s+([\w\s]+?)\s*(?:(20\d{{2}})\s*)?-"
+    )
 
     matches = list(re.finditer(tractor_re, pdf_text, re.IGNORECASE))
     st.write(f"    - Tractor regex matches: {len(matches)}")
 
-    for m in matches:
-        brand = m.group(1).strip()
-        model = m.group(2).strip().rstrip('-').strip()
-        year  = m.group(3) or ""
+    for match in matches:
+        brand = match.group(1).strip()
+        model = match.group(2).strip().rstrip("-").strip()
+        year = match.group(3) or ""
 
         key = f"{brand}_{model}".lower()
         if key in seen_machines:
@@ -230,190 +229,202 @@ def _extract_unregistered_tractors(pdf_text: str) -> list:
         seen_machines.add(key)
 
         label = f"{brand} {model} {year}".strip()
-        context = pdf_text[max(0, m.start()-800):min(len(pdf_text), m.start()+1200)]
-        sum_insured = _extract_sum_insured(context)
-        annual_mileage = _extract_annual_mileage(context)
-        vehicles.append({
-            "registration": "Uregistrert",
-            "vehicle_type": "traktor",
-            "make_model_year": label,
-            "coverage": "kasko",
-            "leasing": "",
-            "annual_mileage": annual_mileage,
-            "bonus": "",
-            "deductible": "",
-            "sum_insured": sum_insured,
-        })
-        st.write(f"      ✓ Traktor: {label}")
+        context = _find_best_vehicle_context(pdf_text, f"{brand} {model}", match.start())
 
-    # ---------------------------------------------------------
-    # MASKINLØSØRE → Øvrig (B76-B84)
-    # OCR variants include: Maskinløsøre, Maskinlosore, MASKINL@S@RE
-    # ---------------------------------------------------------
-    maskin_re = r'maskinl(?:ø|o|0|@)s(?:ø|o|0|@)re'
+        vehicles.append(
+            {
+                "registration": "Uregistrert",
+                "vehicle_type": "traktor",
+                "make_model_year": label,
+                "coverage": "kasko",
+                "leasing": "",
+                "annual_mileage": _extract_annual_mileage(context),
+                "bonus": "",
+                "deductible": "",
+                "sum_insured": _extract_sum_insured(context),
+            }
+        )
+        st.write(f"      - Traktor: {label}")
 
-    matches = list(re.finditer(maskin_re, pdf_text, re.IGNORECASE))
-    st.write(f"    - MASKINLØSØRE regex matches: {len(matches)}")
+    maskin_re = r"maskinl(?:\u00f8|o|0|@|\?|\u00c3\u00b8)s(?:\u00f8|o|0|@|\?|\u00c3\u00b8)re"
+    maskin_matches = list(re.finditer(maskin_re, pdf_text, re.IGNORECASE))
+    st.write(f"    - MASKINLOSORE regex matches: {len(maskin_matches)}")
 
-    for m in matches:
-        start = max(0, m.start() - 150)
-        end = min(len(pdf_text), m.end() + 150)
-        window = pdf_text[start:end]
-        year_match = re.search(r"\b(20\d{2})\b", window)
-        year = year_match.group(1) if year_match else ""
-
+    for match in maskin_matches:
         if "maskinlosore" in seen_machines:
             continue
         seen_machines.add("maskinlosore")
 
-        label = f"MASKINLØSØRE {year}".strip()
-        context = pdf_text[max(0, m.start()-800):min(len(pdf_text), m.start()+1200)]
-        sum_insured = _extract_sum_insured(context)
-        annual_mileage = _extract_annual_mileage(context)
-        vehicles.append({
-            "registration": "Uregistrert",
-            "vehicle_type": "other",
-            "make_model_year": label,
-            "coverage": "kasko",
-            "leasing": "",
-            "annual_mileage": annual_mileage,
-            "bonus": "",
-            "deductible": "",
-            "sum_insured": sum_insured,
-        })
-        st.write(f"      ✓ Øvrig: {label}")
+        window = _slice_context(pdf_text, match.start(), before=150, after=150)
+        year_match = re.search(r"\b(20\d{2})\b", window)
+        year = year_match.group(1) if year_match else ""
+
+        context = _slice_context(pdf_text, match.start(), before=800, after=1200)
+        label = f"MASKINLOSORE {year}".strip()
+
+        vehicles.append(
+            {
+                "registration": "Uregistrert",
+                "vehicle_type": "other",
+                "make_model_year": label,
+                "coverage": "kasko",
+                "leasing": "",
+                # Do not infer driving length for maskinlosore from nearby tractor sections.
+                "annual_mileage": "",
+                "bonus": "",
+                "deductible": "",
+                "sum_insured": _extract_sum_insured(context),
+            }
+        )
+        st.write(f"      - Ovrig: {label}")
 
     tractors = len([v for v in vehicles if v["vehicle_type"] == "traktor"])
-    other   = len([v for v in vehicles if v["vehicle_type"] == "other"])
-    st.write(f"    - **Result: {tractors} tractors, {other} øvrig**")
+    other = len([v for v in vehicles if v["vehicle_type"] == "other"])
+    st.write(f"    - Result: {tractors} tractors, {other} ovrig")
     return vehicles
 
 
-# =============================================================
-# HELPERS - UNCHANGED
-# =============================================================
+def _slice_context(text: str, center: int, before: int, after: int) -> str:
+    """Return bounded text context around a position."""
+    return text[max(0, center - before) : min(len(text), center + after)]
+
+
+def _find_best_vehicle_context(full_text: str, vehicle_hint: str, fallback_pos: int) -> str:
+    """
+    Prefer the detailed vehicle block when it exists.
+    This avoids using only the overview line for mileage/sum extraction.
+    """
+    default_context = _slice_context(full_text, fallback_pos, before=800, after=1200)
+    if not vehicle_hint:
+        return default_context
+
+    hint_re = re.compile(re.escape(vehicle_hint), re.IGNORECASE)
+    candidates: list[tuple[int, str]] = []
+    for match in hint_re.finditer(full_text):
+        window = _slice_context(full_text, match.start(), before=400, after=2200)
+        before_hint = full_text[max(0, match.start() - 500) : match.start()]
+        after_hint = full_text[match.end() : min(len(full_text), match.end() + 1400)]
+        score = 0
+        if re.search(r"Hva\s+er\s+forsikret", before_hint, re.IGNORECASE):
+            score += 3
+        if re.search(r"F(?:\u00f8|o)rste\s+gang\s+registrert|Ferste\s+gang\s+registrert", after_hint, re.IGNORECASE):
+            score += 3
+        if re.search(r"Forsikringen\s+dekker", after_hint, re.IGNORECASE):
+            score += 2
+        if re.search(r"kj[a-z]{0,3}re(?:lengde|tid)\s*(?:inntil|opp\s*til)?\s*[0-9]", after_hint, re.IGNORECASE):
+            score += 2
+        candidates.append((score, window))
+
+    if not candidates:
+        return default_context
+
+    best_score, best_window = max(candidates, key=lambda item: item[0])
+    return best_window if best_score > 0 else default_context
+
+
 def _extract_leasing(section: str, full_text: str, reg: str) -> str:
     """Extract leasing company."""
-    if re.search(r'sparebank\s*1', section, re.I):
+    if re.search(r"sparebank\s*1", section, re.I):
         return "Sparebank 1"
-    if re.search(r'nordea\s*finans', section, re.I):
+    if re.search(r"nordea\s*finans", section, re.I):
         return "Nordea Finans"
-    if re.search(r'santander', section, re.I):
+    if re.search(r"santander", section, re.I):
         return "Santander"
-    if re.search(r'dnb\s*finans', section, re.I):
+    if re.search(r"dnb\s*finans", section, re.I):
         return "DNB Finans"
-    if re.search(r'brage\s*finans', section, re.I):
+    if re.search(r"brage\s*finans", section, re.I):
         return "BRAGE FINANS"
 
-    reg_pattern = rf'{reg}.*?(?:Sparebank 1|Nordea Finans|Santander|DNB Finans|BRAGE FINANS)'
+    reg_pattern = rf"{reg}.*?(?:Sparebank 1|Nordea Finans|Santander|DNB Finans|BRAGE FINANS)"
     match = re.search(reg_pattern, full_text, re.I | re.DOTALL)
+    if not match:
+        return ""
 
-    if match:
-        matched_text = match.group(0)
-        if re.search(r'sparebank\s*1', matched_text, re.I):
-            return "Sparebank 1"
-        if re.search(r'nordea\s*finans', matched_text, re.I):
-            return "Nordea Finans"
-        if re.search(r'santander', matched_text, re.I):
-            return "Santander"
-        if re.search(r'dnb\s*finans', matched_text, re.I):
-            return "DNB Finans"
-        if re.search(r'brage\s*finans', matched_text, re.I):
-            return "BRAGE FINANS"
-
+    matched_text = match.group(0)
+    if re.search(r"sparebank\s*1", matched_text, re.I):
+        return "Sparebank 1"
+    if re.search(r"nordea\s*finans", matched_text, re.I):
+        return "Nordea Finans"
+    if re.search(r"santander", matched_text, re.I):
+        return "Santander"
+    if re.search(r"dnb\s*finans", matched_text, re.I):
+        return "DNB Finans"
+    if re.search(r"brage\s*finans", matched_text, re.I):
+        return "BRAGE FINANS"
     return ""
 
 
 def _extract_bonus(full_text: str, reg: str) -> str:
     """Extract bonus percentage."""
-    bonus_match = re.search(rf'{reg}:\s*(\d+)%\s*bonus', full_text, re.I)
+    bonus_match = re.search(rf"{reg}:\s*(\d+)%\s*bonus", full_text, re.I)
     if bonus_match:
         return bonus_match.group(1) + "%"
     return ""
 
 
 def _normalize_digits(value: str) -> str:
-    """Return digits only (removes spaces, dots, commas)."""
+    """Return digits only."""
     return re.sub(r"\D", "", value or "").strip()
 
 
-def _extract_sum_insured(text: str) -> str:
-    """Extract Forsikringssum if present."""
+def _normalize_ocr_text(text: str) -> str:
+    """Normalize common OCR and mojibake artifacts for pattern matching."""
     if not text:
         return ""
-    # Direct label/value: "Forsikringssum 450 000" / "Forsikringssum kr: 20 000"
+
+    normalized = text
+    replacements = {
+        "\u00c3\u00b8": "o",
+        "\u00c3\u0098": "o",
+        "\u00c3\u00a5": "a",
+        "\u00c3\u0085": "a",
+        "\u00c3\u00a6": "ae",
+        "\u00c3\u0086": "ae",
+        "\u00f8": "o",
+        "\u00d8": "o",
+        "\u00e5": "a",
+        "\u00c5": "a",
+        "\u00e6": "ae",
+        "\u00c6": "ae",
+    }
+    for src, dst in replacements.items():
+        normalized = normalized.replace(src, dst)
+
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized
+
+
+def _extract_sum_insured(text: str) -> str:
+    """
+    Extract Forsikringssum when explicitly labeled.
+    We intentionally do not use generic coverage lines as fallback.
+    """
+    if not text:
+        return ""
+
+    normalized = _normalize_ocr_text(text)
     match = re.search(
-        r"Forsikringssum(?:\s*\(kr\))?\s*(?:kr)?\s*[:\-]?\s*([0-9]{1,3}(?:[\s\.,]?[0-9]{3})+)",
-        text,
+        r"forsikringssum(?:\s*\(kr\))?\s*(?:kr)?\s*[:\-]?\s*([0-9]{1,3}(?:[\s\.,]?[0-9]{3})+)",
+        normalized,
         re.IGNORECASE,
     )
     if match:
         return _normalize_digits(match.group(1))
-
-    # Column-layout fallback used in Gjensidige OCR:
-    # "Hva er forsikret Forsikringssum Egenandel ... Forsikringen dekker Ansvar 5 000 ..."
-    decker = re.search(r"Forsikringen\s+dekker(.{0,1200})", text, re.IGNORECASE | re.DOTALL)
-    if decker:
-        snippet = decker.group(1)
-        # Prefer "Ansvar <sum>" when it's numeric kroner.
-        ansvar_match = re.search(
-            r"\bAnsvar\s+([0-9]{1,3}(?:[\s\.,]?[0-9]{3})+)\b",
-            snippet,
-            re.IGNORECASE,
-        )
-        if ansvar_match:
-            return _normalize_digits(ansvar_match.group(1))
-
-        # Fallback to a generic row under Forsikringssum column.
-        row_match = re.search(
-            r"\b(?:Rettshjelp|Kasko|Brann(?:\s+og\s+tyveri)?)\s+([0-9]{1,3}(?:[\s\.,]?[0-9]{3})+)\b",
-            snippet,
-            re.IGNORECASE,
-        )
-        if row_match:
-            return _normalize_digits(row_match.group(1))
     return ""
 
 
 def _extract_annual_mileage(text: str) -> str:
-    """Extract annual mileage or driving time if present."""
+    """Extract annual mileage or annual driving time when present."""
     if not text:
         return ""
-    match = re.search(
-        r"(?:[AaÅå]rlig\s+)?(?:kj[øo]relengde|kj[øo]retid)\s*"
-        r"(?:inntil|opp\s*til)?\s*([0-9][0-9\s\.,]{2,})\s*"
-        r"(?:km|kilometer|timer)?",
-        text,
-        re.IGNORECASE,
-    )
-    if match:
-        return _normalize_digits(match.group(1))
+
+    normalized = _normalize_ocr_text(text).lower()
+    patterns = [
+        r"(?:arlig\s+)?(?:kjorelengde|kjoretid)\s*(?:inntil|opp\s*til)?\s*([0-9][0-9\s\.,]{2,})\s*(?:km|kilometer|timer)?",
+        r"(?:arlig\s+)?kj[a-z]{0,3}re(?:lengde|tid)\s*(?:inntil|opp\s*til)?\s*([0-9][0-9\s\.,]{2,})\s*(?:km|kilometer|timer)?",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, normalized, re.IGNORECASE)
+        if match:
+            return _normalize_digits(match.group(1))
     return ""
-
-
-def _extract_minigruppe_sum_insured(full_text: str) -> str:
-    """Extract shared Forsikringssum for Næringsbil Minigruppe blocks."""
-    if not full_text:
-        return ""
-    minigruppe = re.search(
-        r"N(?:æringsbil|aeringsbil|eringsbil|Ã¦ringsbil|\?ringsbil)\s+Minigruppe(.{0,5000})",
-        full_text,
-        re.IGNORECASE | re.DOTALL,
-    )
-    if not minigruppe:
-        return ""
-    return _extract_sum_insured(minigruppe.group(0))
-
-
-def _extract_minigruppe_mileage(full_text: str) -> str:
-    """Extract shared annual mileage/driving-time for Næringsbil Minigruppe blocks."""
-    if not full_text:
-        return ""
-    minigruppe = re.search(
-        r"N(?:æringsbil|aeringsbil|eringsbil|Ã¦ringsbil|\?ringsbil)\s+Minigruppe(.{0,5000})",
-        full_text,
-        re.IGNORECASE | re.DOTALL,
-    )
-    if not minigruppe:
-        return ""
-    return _extract_annual_mileage(minigruppe.group(0))
