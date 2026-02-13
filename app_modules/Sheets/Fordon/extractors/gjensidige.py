@@ -64,6 +64,10 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
         "MG", "SEAT", "MINI"
     ]
 
+    # Global fallback for Minigruppe documents where coverage is shared for all cars.
+    global_car_sum_insured = _extract_minigruppe_sum_insured(pdf_text)
+    global_car_mileage = _extract_minigruppe_mileage(pdf_text)
+
     # FORMAT 1: BRAND + text + YEAR + REG (allow spaced digits)
     brands_pattern = '|'.join(brands)
     reg_token = r'[A-Z]{2}\s*\d(?:\s?\d){3,4}'
@@ -85,8 +89,8 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
 
         leasing = _extract_leasing(section, pdf_text, reg)
         bonus = _extract_bonus(pdf_text, reg)
-        sum_insured = _extract_sum_insured(section)
-        annual_mileage = _extract_annual_mileage(section)
+        sum_insured = _extract_sum_insured(section) or global_car_sum_insured
+        annual_mileage = _extract_annual_mileage(section) or global_car_mileage
 
         vehicles.append({
             "registration": reg,
@@ -160,8 +164,8 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
             seen.add(reg)
             leasing = _extract_leasing(window, pdf_text, reg)
             bonus = _extract_bonus(pdf_text, reg)
-            sum_insured = _extract_sum_insured(window)
-            annual_mileage = _extract_annual_mileage(window)
+            sum_insured = _extract_sum_insured(window) or global_car_sum_insured
+            annual_mileage = _extract_annual_mileage(window) or global_car_mileage
 
             make_model_year = f"{make_model} {found_year}".strip()
             vehicles.append({
@@ -337,13 +341,37 @@ def _extract_sum_insured(text: str) -> str:
     """Extract Forsikringssum if present."""
     if not text:
         return ""
+    # Direct label/value: "Forsikringssum 450 000" / "Forsikringssum kr: 20 000"
     match = re.search(
-        r"Forsikringssum\s*(?:kr)?\s*[:\-]?\s*([0-9]{1,3}(?:[\s\.,]?[0-9]{3})+)",
+        r"Forsikringssum(?:\s*\(kr\))?\s*(?:kr)?\s*[:\-]?\s*([0-9]{1,3}(?:[\s\.,]?[0-9]{3})+)",
         text,
         re.IGNORECASE,
     )
     if match:
         return _normalize_digits(match.group(1))
+
+    # Column-layout fallback used in Gjensidige OCR:
+    # "Hva er forsikret Forsikringssum Egenandel ... Forsikringen dekker Ansvar 5 000 ..."
+    decker = re.search(r"Forsikringen\s+dekker(.{0,1200})", text, re.IGNORECASE | re.DOTALL)
+    if decker:
+        snippet = decker.group(1)
+        # Prefer "Ansvar <sum>" when it's numeric kroner.
+        ansvar_match = re.search(
+            r"\bAnsvar\s+([0-9]{1,3}(?:[\s\.,]?[0-9]{3})+)\b",
+            snippet,
+            re.IGNORECASE,
+        )
+        if ansvar_match:
+            return _normalize_digits(ansvar_match.group(1))
+
+        # Fallback to a generic row under Forsikringssum column.
+        row_match = re.search(
+            r"\b(?:Rettshjelp|Kasko|Brann(?:\s+og\s+tyveri)?)\s+([0-9]{1,3}(?:[\s\.,]?[0-9]{3})+)\b",
+            snippet,
+            re.IGNORECASE,
+        )
+        if row_match:
+            return _normalize_digits(row_match.group(1))
     return ""
 
 
@@ -361,3 +389,31 @@ def _extract_annual_mileage(text: str) -> str:
     if match:
         return _normalize_digits(match.group(1))
     return ""
+
+
+def _extract_minigruppe_sum_insured(full_text: str) -> str:
+    """Extract shared Forsikringssum for Næringsbil Minigruppe blocks."""
+    if not full_text:
+        return ""
+    minigruppe = re.search(
+        r"N(?:æringsbil|aeringsbil|eringsbil|Ã¦ringsbil|\?ringsbil)\s+Minigruppe(.{0,5000})",
+        full_text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not minigruppe:
+        return ""
+    return _extract_sum_insured(minigruppe.group(0))
+
+
+def _extract_minigruppe_mileage(full_text: str) -> str:
+    """Extract shared annual mileage/driving-time for Næringsbil Minigruppe blocks."""
+    if not full_text:
+        return ""
+    minigruppe = re.search(
+        r"N(?:æringsbil|aeringsbil|eringsbil|Ã¦ringsbil|\?ringsbil)\s+Minigruppe(.{0,5000})",
+        full_text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not minigruppe:
+        return ""
+    return _extract_annual_mileage(minigruppe.group(0))
