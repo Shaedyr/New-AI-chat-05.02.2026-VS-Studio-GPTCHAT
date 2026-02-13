@@ -410,6 +410,24 @@ def _extract_sum_insured(text: str) -> str:
     )
     if match:
         return _normalize_digits(match.group(1))
+
+    # Table-style fallback:
+    # "Hva er forsikret  Forsikringssum  Egenandel" + row values before "Forsikringen dekker".
+    header_block = re.search(
+        r"hva\s+er\s+forsikret\s+forsikringssum\s+egenandel(.{0,700}?)(?:forsikringen\s+dekker|$)",
+        normalized,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if header_block:
+        row_text = header_block.group(1)
+        for candidate in re.findall(r"\b[0-9]{1,3}(?:[\s\.,][0-9]{3})+\b", row_text):
+            value = _normalize_digits(candidate)
+            if not value:
+                continue
+            # Guard against accidental years.
+            if 1900 <= int(value) <= 2100:
+                continue
+            return value
     return ""
 
 
