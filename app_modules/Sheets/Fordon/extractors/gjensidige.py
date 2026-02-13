@@ -246,7 +246,7 @@ def _extract_unregistered_tractors(pdf_text: str) -> list:
     # MASKINLØSØRE → Øvrig (B76-B84)
     # OCR variants include: Maskinløsøre, Maskinlosore, MASKINL@S@RE
     # ---------------------------------------------------------
-    maskin_re = r'maskinl(?:ø|o|0|@|\?)s(?:ø|o|0|@|\?)re'
+    maskin_re = r'maskinl(?:ø|o|0|@)s(?:ø|o|0|@)re'
 
     matches = list(re.finditer(maskin_re, pdf_text, re.IGNORECASE))
     st.write(f"    - MASKINLØSØRE regex matches: {len(matches)}")
@@ -352,7 +352,7 @@ def _extract_annual_mileage(text: str) -> str:
     if not text:
         return ""
     match = re.search(
-        r"(?:[AaÅå\?]rlig\s+)?(?:kj[øo\?]relengde|kj[øo\?]retid)\s*"
+        r"(?:[AaÅå]rlig\s+)?(?:kj[øo]relengde|kj[øo]retid)\s*"
         r"(?:inntil|opp\s*til)?\s*([0-9][0-9\s\.,]{2,})\s*"
         r"(?:km|kilometer|timer)?",
         text,
