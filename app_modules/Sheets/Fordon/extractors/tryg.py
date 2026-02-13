@@ -101,7 +101,7 @@ def _extract_detailed_format(pdf_text: str, seen: set) -> list:
         
         # Make/Model/Year
         make_match = re.search(
-            r'Fabrikat/årsmodell\s*\n\s*([A-Za-zÆØÅæøå0-9\s\-]+?)(?:\n|Type:)',
+            r'Fabrikat/(?:årsmodell|arsmodell|Ã¥rsmodell|\?rsmodell)\s*\n\s*([A-Za-zÆØÅæøå0-9\s\-]+?)(?:\n|Type:)',
             section,
             re.IGNORECASE
         )
@@ -202,7 +202,11 @@ def _extract_key_values(section: str) -> dict:
         (r"Kjennemerke", "registration"),
         (r"Registreringsnummer", "registration"),
         (r"Fabrikat/årsmodell/Type", "make_model_year"),
+        (r"Fabrikat/arsmodell/Type", "make_model_year"),
+        (r"Fabrikat/\?rsmodell/Type", "make_model_year"),
         (r"Fabrikat/årsmodell", "make_model_year"),
+        (r"Fabrikat/arsmodell", "make_model_year"),
+        (r"Fabrikat/\?rsmodell", "make_model_year"),
         (r"Type", "type"),
         (r"Forsikringssum\s*kr", "sum_insured"),
         (r"Forsikringssum", "sum_insured"),
@@ -210,6 +214,8 @@ def _extract_key_values(section: str) -> dict:
         (r"Egenandel", "deductible"),
         (r"Pris", "premium"),
         (r"Årlig kjørelengde", "annual_mileage"),
+        (r"Arlig kjorelengde", "annual_mileage"),
+        (r"\?rlig kj\?relengde", "annual_mileage"),
         (r"Bonus", "bonus"),
         (r"Leasing", "leasing"),
     ]
@@ -303,7 +309,7 @@ def _extract_specification_format(pdf_text: str, seen: set) -> list:
 
     # Headers that usually denote a vehicle-specific section
     header_re = re.compile(
-        r"(?P<header>(?:Motorvogn|Personbil|Varebil|Lastebil|Campingvogn og tilhenger|Tilhenger|Traktor|Moped|Motorsykkel|Snøscooter|Båt)[^\n]*?)\s*-\s*Vilkår\s+[A-Z]{2,4}\d+",
+        r"(?P<header>(?:Motorvogn|Personbil|Varebil|Lastebil|Campingvogn og tilhenger|Tilhenger|Traktor|Moped|Motorsykkel|Snøscooter|Båt)[^\n]*?)\s*-\s*Vilk(?:år|ar|Ã¥r|\?r)\s+[A-Z]{2,4}\d+",
         re.IGNORECASE
     )
     matches = list(re.finditer(header_re, pdf_text))
@@ -334,7 +340,7 @@ def _extract_specification_format(pdf_text: str, seen: set) -> list:
 
         if not kv.get("make_model_year"):
             mm_match = re.search(
-                r'Fabrikat[^\n]*(?:årsmodell|arsmodell|Ã¥rsmodell)\s*[:\-]?\s*([A-Za-zÆØÅæøå0-9\-\s]{3,80})',
+                r'Fabrikat[^\n]*(?:årsmodell|arsmodell|Ã¥rsmodell|\?rsmodell)\s*[:\-]?\s*([A-Za-zÆØÅæøå0-9\-\s]{3,80})',
                 section,
                 re.IGNORECASE
             )
@@ -601,7 +607,7 @@ def _extract_from_headers(pdf_text: str, seen: set) -> list:
     vehicles = []
     
     # Find sections with Vilkår codes (indicates vehicle insurance)
-    header_pattern = r'(Motorvogn|Campingvogn og tilhenger|Tilhenger|Traktor|Moped|Motorsykkel|Snøscooter|Båt|Personbil|Varebil|Lastebil)\s*-\s*Vilkår\s+([A-Z]+\d+)'
+    header_pattern = r'(Motorvogn|Campingvogn og tilhenger|Tilhenger|Traktor|Moped|Motorsykkel|Snøscooter|Båt|Personbil|Varebil|Lastebil)\s*-\s*Vilk(?:år|ar|Ã¥r|\?r)\s+([A-Z]+\d+)'
     
     matches = re.finditer(header_pattern, pdf_text, re.IGNORECASE)
     
