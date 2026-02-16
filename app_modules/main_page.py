@@ -314,8 +314,11 @@ def run():
     # MERGE ALL FIELDS
     # ---------------------------------------------------------
     merged_fields = {}
-    merged_fields.update(company_data)
+    # Keep BRREG/manual values as the source of truth for shared company fields.
+    # PDF data is merged first so it can still provide sheet-specific fields
+    # (e.g. pdf_text for vehicle extraction) without overriding BRREG basics.
     merged_fields.update(pdf_fields)
+    merged_fields.update(company_data)
     merged_fields["company_summary"] = summary_text
     merged_fields["vehicle_provider"] = vehicle_provider
 
