@@ -36,6 +36,22 @@ VEHICLE_COLUMNS = {
 PREMIUM_FONT_COLOR = "0129F6"
 
 
+def _looks_like_ly_document(pdf_text: str) -> bool:
+    text = (pdf_text or "").lower()
+    if "ly forsikring" not in text:
+        return False
+    ly_markers = (
+        "firmabil flåte",
+        "firmabil flate",
+        "tilhenger flåte",
+        "tilhenger flate",
+        "registreringsnummer ureg",
+        "kjøretøy som inngår i gruppen",
+        "kjoretoy som inngar i gruppen",
+    )
+    return any(marker in text for marker in ly_markers)
+
+
 def extract_vehicles_from_pdf(pdf_text: str, provider: str | None = None) -> dict:
     """
     Main extraction orchestrator.
@@ -59,54 +75,76 @@ def extract_vehicles_from_pdf(pdf_text: str, provider: str | None = None) -> dic
     st.write("---")
     
     all_vehicles = []
-    
-    # Try If Skadeforsikring
-    st.write("  🔎 **If Skadeforsikring**")
-    try:
-        if_vehicles = extract_if_vehicles(pdf_text)
-        if if_vehicles:
-            st.write(f"    ✅ {len(if_vehicles)} vehicles")
-            all_vehicles.extend(if_vehicles)
-        else:
-            st.write("    ⊘ No matches")
-    except Exception as e:
-        st.write(f"    ❌ Error: {e}")
-    
-    # Try Gjensidige
-    st.write("  🔎 **Gjensidige**")
-    try:
-        gjen_vehicles = extract_gjensidige_vehicles(pdf_text)
-        if gjen_vehicles:
-            st.write(f"    ✅ {len(gjen_vehicles)} vehicles")
-            all_vehicles.extend(gjen_vehicles)
-        else:
-            st.write("    ⊘ No matches")
-    except Exception as e:
-        st.write(f"    ❌ Error: {e}")
-    
-    # Try Tryg Forsikring
-    st.write("  🔎 **Tryg Forsikring**")
-    try:
-        tryg_vehicles = extract_tryg_vehicles(pdf_text)
-        if tryg_vehicles:
-            st.write(f"    ✅ {len(tryg_vehicles)} vehicles")
-            all_vehicles.extend(tryg_vehicles)
-        else:
-            st.write("    ⊘ No matches")
-    except Exception as e:
-        st.write(f"    ❌ Error: {e}")
+    run_broad_extractors = True
 
-    # Try Ly Forsikring
-    st.write("  🔎 **Ly Forsikring**")
-    try:
-        ly_vehicles = extract_ly_vehicles(pdf_text)
-        if ly_vehicles:
-            st.write(f"    ✅ {len(ly_vehicles)} vehicles")
-            all_vehicles.extend(ly_vehicles)
-        else:
-            st.write("    ⊘ No matches")
-    except Exception as e:
-        st.write(f"    ❌ Error: {e}")
+    # Ly PDFs can be falsely matched by broad extractors (especially Gjensidige fallback).
+    # Prioritize Ly-only extraction when the document clearly looks like Ly.
+    ly_priority = provider_norm in ("ly", "ly forsikring")
+    if not ly_priority and provider_norm in ("", "auto-detect"):
+        ly_priority = _looks_like_ly_document(pdf_text)
+
+    if ly_priority:
+        st.write("  🔎 **Ly Forsikring (priority)**")
+        try:
+            ly_vehicles = extract_ly_vehicles(pdf_text)
+            if ly_vehicles:
+                st.write(f"    ✅ {len(ly_vehicles)} vehicles")
+                st.info("Detected Ly format. Skipping broad cross-format extractors to avoid false car matches.")
+                all_vehicles.extend(ly_vehicles)
+                run_broad_extractors = False
+            else:
+                st.write("    ⊘ No matches")
+        except Exception as e:
+            st.write(f"    ❌ Error: {e}")
+    
+    if run_broad_extractors:
+        # Try If Skadeforsikring
+        st.write("  🔎 **If Skadeforsikring**")
+        try:
+            if_vehicles = extract_if_vehicles(pdf_text)
+            if if_vehicles:
+                st.write(f"    ✅ {len(if_vehicles)} vehicles")
+                all_vehicles.extend(if_vehicles)
+            else:
+                st.write("    ⊘ No matches")
+        except Exception as e:
+            st.write(f"    ❌ Error: {e}")
+        
+        # Try Gjensidige
+        st.write("  🔎 **Gjensidige**")
+        try:
+            gjen_vehicles = extract_gjensidige_vehicles(pdf_text)
+            if gjen_vehicles:
+                st.write(f"    ✅ {len(gjen_vehicles)} vehicles")
+                all_vehicles.extend(gjen_vehicles)
+            else:
+                st.write("    ⊘ No matches")
+        except Exception as e:
+            st.write(f"    ❌ Error: {e}")
+        
+        # Try Tryg Forsikring
+        st.write("  🔎 **Tryg Forsikring**")
+        try:
+            tryg_vehicles = extract_tryg_vehicles(pdf_text)
+            if tryg_vehicles:
+                st.write(f"    ✅ {len(tryg_vehicles)} vehicles")
+                all_vehicles.extend(tryg_vehicles)
+            else:
+                st.write("    ⊘ No matches")
+        except Exception as e:
+            st.write(f"    ❌ Error: {e}")
+
+        # Try Ly Forsikring
+        st.write("  🔎 **Ly Forsikring**")
+        try:
+            ly_vehicles = extract_ly_vehicles(pdf_text)
+            if ly_vehicles:
+                st.write(f"    ✅ {len(ly_vehicles)} vehicles")
+                all_vehicles.extend(ly_vehicles)
+            else:
+                st.write("    ⊘ No matches")
+        except Exception as e:
+            st.write(f"    ❌ Error: {e}")
     
     if not all_vehicles:
         st.error("❌ No vehicles found!")
