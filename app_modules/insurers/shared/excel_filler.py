@@ -1,6 +1,7 @@
 from openpyxl import load_workbook
-from openpyxl.styles import PatternFill, Alignment
+from openpyxl.styles import PatternFill, Alignment, Color
 from io import BytesIO
+from copy import copy
 from app_modules.insurers.shared.sheet_config import SHEET_MAPPINGS, transform_for_sheet
 import streamlit as st
 
@@ -73,6 +74,12 @@ def fill_excel(template_bytes, field_values, summary_text):
             # DYNAMIC MAPPING (like Fordon)
             # transform_data() returns cell_ref -> value directly
             st.write(f"  📌 Using dynamic mapping ({len(transformed_data)} cells)")
+
+            cell_styles = {}
+            if isinstance(transformed_data, dict):
+                raw_styles = transformed_data.pop("_cell_styles", {})
+                if isinstance(raw_styles, dict):
+                    cell_styles = raw_styles
             
             for cell_ref, value in transformed_data.items():
                 # cell_ref is like "B3", "C3", etc.
@@ -90,6 +97,17 @@ def fill_excel(template_bytes, field_values, summary_text):
                             continue
                         
                         cell.value = value
+
+                        style_cfg = cell_styles.get(cell_ref, {})
+                        font_color = style_cfg.get("font_color")
+                        if font_color:
+                            rgb = str(font_color).replace("#", "").upper()
+                            if len(rgb) == 6:
+                                rgb = f"FF{rgb}"
+                            new_font = copy(cell.font)
+                            new_font.color = Color(rgb=rgb)
+                            cell.font = new_font
+
                         st.write(f"    ✓ Filled {cell_ref}: {str(value)[:50]}")
                     except Exception as e:
                         st.error(f"    ❌ Error filling {cell_ref}: {e}")

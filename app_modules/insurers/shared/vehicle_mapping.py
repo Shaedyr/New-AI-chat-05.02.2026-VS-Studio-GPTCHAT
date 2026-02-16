@@ -32,6 +32,8 @@ VEHICLE_COLUMNS = {
     "deductible": "I",
 }
 
+PREMIUM_FONT_COLOR = "0129F6"
+
 
 def extract_vehicles_from_pdf(pdf_text: str, provider: str | None = None) -> dict:
     """
@@ -199,6 +201,7 @@ def transform_data(extracted: dict) -> dict:
     st.info("✅ Fields: Leasing, Årlig kjørelengde, Bonus, Egenandel")
     
     out = {}
+    cell_styles = {}
     pdf_text = extracted.get("pdf_text", "")
     
     if not pdf_text:
@@ -244,7 +247,20 @@ def transform_data(extracted: dict) -> dict:
                 break
             
             for field, column in VEHICLE_COLUMNS.items():
-                out[f"{column}{row}"] = vehicle.get(field, "")
+                cell_ref = f"{column}{row}"
+                if field == "sum_insured":
+                    sum_insured = vehicle.get("sum_insured", "")
+                    premium = vehicle.get("premium", "")
+                    if sum_insured:
+                        out[cell_ref] = sum_insured
+                    elif premium:
+                        out[cell_ref] = premium
+                        cell_styles[cell_ref] = {"font_color": PREMIUM_FONT_COLOR}
+                    else:
+                        out[cell_ref] = ""
+                    continue
+
+                out[cell_ref] = vehicle.get(field, "")
             
             details = f"{vehicle['registration']} - {vehicle['make_model_year']}"
             if vehicle.get('leasing'):
@@ -255,10 +271,15 @@ def transform_data(extracted: dict) -> dict:
                 details += f" | Bonus: {vehicle['bonus']}"
             if vehicle.get('deductible'):
                 details += f" | Egenandel: {vehicle['deductible']}"
+            if (not vehicle.get('sum_insured')) and vehicle.get('premium'):
+                details += f" | Premium(D): {vehicle['premium']}"
             
             st.write(f"    Row {row}: {details}")
             total += 1
     
+    if cell_styles:
+        out["_cell_styles"] = cell_styles
+
     st.success(f"✅ Mapped {total} vehicles to Excel")
     
     return out

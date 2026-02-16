@@ -99,6 +99,7 @@ def _extract_registered_cars(pdf_text: str, seen: set[str]) -> list:
 
         pos = match.start()
         section = _slice_context(pdf_text, pos, before=200, after=500)
+        premium = _extract_premium_after_position(pdf_text, match.end())
 
         vehicles.append(
             {
@@ -111,6 +112,7 @@ def _extract_registered_cars(pdf_text: str, seen: set[str]) -> list:
                 "bonus": _extract_bonus(pdf_text, reg),
                 "deductible": "",
                 "sum_insured": _extract_sum_insured(section),
+                "premium": premium,
             }
         )
 
@@ -134,6 +136,7 @@ def _extract_registered_cars(pdf_text: str, seen: set[str]) -> list:
         pos = reg_match.start()
         window = _slice_context(pdf_text, pos, before=500, after=500)
         context_window = _slice_context(pdf_text, pos, before=120, after=120)
+        premium = _extract_premium_after_position(pdf_text, reg_match.end())
 
         found_brand = ""
         found_model = ""
@@ -176,6 +179,7 @@ def _extract_registered_cars(pdf_text: str, seen: set[str]) -> list:
                 "bonus": _extract_bonus(pdf_text, reg),
                 "deductible": "",
                 "sum_insured": _extract_sum_insured(window),
+                "premium": premium,
             }
         )
 
@@ -212,7 +216,7 @@ def _extract_unregistered_tractors(pdf_text: str) -> list:
     brands_alt = "|".join(found_brands) if found_brands else "|".join(MACHINE_BRANDS)
     tractor_re = (
         rf"[Uu]registrert\s+traktor\s+og\s+arb\.?maskin\s*-\s*"
-        rf"({brands_alt})\s+([\w\s]+?)\s*(?:(20\d{{2}})\s*)?-"
+        rf"({brands_alt})\s+([\w\s]+?)\s*(?:(20\d{{2}})\s*)?-\s*([0-9][0-9\s\.,]{{2,}})"
     )
 
     matches = list(re.finditer(tractor_re, pdf_text, re.IGNORECASE))
@@ -222,6 +226,7 @@ def _extract_unregistered_tractors(pdf_text: str) -> list:
         brand = match.group(1).strip()
         model = match.group(2).strip().rstrip("-").strip()
         year = match.group(3) or ""
+        premium = _normalize_digits(match.group(4))
 
         key = f"{brand}_{model}".lower()
         if key in seen_machines:
@@ -242,6 +247,7 @@ def _extract_unregistered_tractors(pdf_text: str) -> list:
                 "bonus": "",
                 "deductible": "",
                 "sum_insured": _extract_sum_insured(context),
+                "premium": premium,
             }
         )
         st.write(f"      - Traktor: {label}")
@@ -258,6 +264,12 @@ def _extract_unregistered_tractors(pdf_text: str) -> list:
         window = _slice_context(pdf_text, match.start(), before=150, after=150)
         year_match = re.search(r"\b(20\d{2})\b", window)
         year = year_match.group(1) if year_match else ""
+        line_start = pdf_text.rfind("\n", 0, match.start()) + 1
+        line_end = pdf_text.find("\n", match.start())
+        if line_end == -1:
+            line_end = len(pdf_text)
+        line_text = pdf_text[line_start:line_end]
+        premium = _extract_premium_from_window(line_text) or _extract_premium_from_window(window)
 
         context = _slice_context(pdf_text, match.start(), before=800, after=1200)
         label = f"MASKINLOSORE {year}".strip()
@@ -274,6 +286,7 @@ def _extract_unregistered_tractors(pdf_text: str) -> list:
                 "bonus": "",
                 "deductible": "",
                 "sum_insured": _extract_sum_insured(context),
+                "premium": premium,
             }
         )
         st.write(f"      - Ovrig: {label}")
@@ -365,6 +378,43 @@ def _extract_bonus(full_text: str, reg: str) -> str:
 def _normalize_digits(value: str) -> str:
     """Return digits only."""
     return re.sub(r"\D", "", value or "").strip()
+
+
+def _extract_premium_after_position(text: str, start_pos: int) -> str:
+    """
+    Extract first numeric amount after a known vehicle token (typically row premium).
+    """
+    if not text:
+        return ""
+    tail = text[start_pos : min(len(text), start_pos + 100)]
+    match = re.search(r"\b([0-9]{1,3}(?:[\s\.,][0-9]{3})+|[0-9]{5,6})\b", tail)
+    if not match:
+        return ""
+    value = _normalize_digits(match.group(1))
+    if not value:
+        return ""
+    # avoid accidental year capture
+    if 1900 <= int(value) <= 2100:
+        return ""
+    return value
+
+
+def _extract_premium_from_window(text: str) -> str:
+    """
+    Extract likely premium from a short overview window.
+    Chooses the last numeric amount in the window (usually the price in overview rows).
+    """
+    if not text:
+        return ""
+    candidates = []
+    for hit in re.findall(r"\b([0-9]{1,3}(?:[\s\.,][0-9]{3})+|[0-9]{5,6})\b", text):
+        value = _normalize_digits(hit)
+        if not value:
+            continue
+        if 1900 <= int(value) <= 2100:
+            continue
+        candidates.append(value)
+    return candidates[-1] if candidates else ""
 
 
 def _normalize_ocr_text(text: str) -> str:
