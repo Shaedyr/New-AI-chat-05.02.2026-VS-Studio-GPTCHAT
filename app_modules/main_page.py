@@ -173,7 +173,11 @@ def run():
     # ---------------------------------------------------------
     col_pdf, col_provider = st.columns([2, 1])
     with col_pdf:
-        pdf_bytes = st.file_uploader("Upload PDF (optional)", type=["pdf"])
+        pdf_uploads = st.file_uploader(
+            "Upload PDF(s) (optional)",
+            type=["pdf"],
+            accept_multiple_files=True
+        )
     with col_provider:
         vehicle_provider = st.selectbox(
             "Vehicle PDF type",
@@ -190,7 +194,29 @@ def run():
     # ---------------------------------------------------------
     # STEP 7: PDF FIELDS
     # ---------------------------------------------------------
-    pdf_fields = extract_fields_from_pdf(pdf_bytes) if pdf_bytes else {}
+    pdf_fields = {}
+    if pdf_uploads:
+        combined_pdf_text_parts = []
+
+        for uploaded_pdf in pdf_uploads:
+            extracted_fields = extract_fields_from_pdf(uploaded_pdf)
+            if not extracted_fields:
+                continue
+
+            # Keep all PDF text to support multi-part insurance documents.
+            text_part = extracted_fields.get("pdf_text", "")
+            if text_part:
+                combined_pdf_text_parts.append(text_part)
+
+            # For non-text fields, keep first non-empty value.
+            for key, value in extracted_fields.items():
+                if key == "pdf_text":
+                    continue
+                if value and not pdf_fields.get(key):
+                    pdf_fields[key] = value
+
+        if combined_pdf_text_parts:
+            pdf_fields["pdf_text"] = "\n\n".join(combined_pdf_text_parts)
 
     # ---------------------------------------------------------
     # DEBUG: VEHICLE EXTRACTION (optional)
