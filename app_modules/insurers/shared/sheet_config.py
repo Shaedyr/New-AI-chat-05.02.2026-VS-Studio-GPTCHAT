@@ -16,11 +16,18 @@ from app_modules.insurers.shared.vehicle_mapping import (
     transform_data as transform_fordon
 )
 
+# Import Yrkesskade mapping (shared dispatcher)
+from app_modules.insurers.shared.workers_comp_mapping import (
+    CELL_MAP as YRKESSKADE_MAP,
+    transform_data as transform_yrkesskade,
+)
+
 
 # Master mapping: Excel sheet name -> field mappings
 SHEET_MAPPINGS = {
     "Sammendrag": SAMMENDRAG_MAP,
     "Fordon": FORDON_MAP,  # Note: Fordon uses dynamic mapping, CELL_MAP is empty
+    "Yrkesskade": YRKESSKADE_MAP,  # Dynamic mapping per insurer
     # Add other sheets here when you create their mapping files
 }
 
@@ -29,6 +36,7 @@ SHEET_MAPPINGS = {
 SHEET_TRANSFORMS = {
     "Sammendrag": transform_sammendrag,
     "Fordon": transform_fordon,
+    "Yrkesskade": transform_yrkesskade,
     # Add other sheets here when you create their mapping files
 }
 
