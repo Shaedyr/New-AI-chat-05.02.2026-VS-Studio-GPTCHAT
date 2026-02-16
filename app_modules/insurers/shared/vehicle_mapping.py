@@ -9,6 +9,7 @@ Each insurance company has its own extractor in extractors/
 import streamlit as st
 from app_modules.Sheets.Fordon.extractors.if_skadeforsikring import extract_if_vehicles
 from app_modules.Sheets.Fordon.extractors.gjensidige import extract_gjensidige_vehicles
+from app_modules.Sheets.Fordon.extractors.ly import extract_ly_vehicles
 from app_modules.Sheets.Fordon.extractors.tryg import extract_tryg_vehicles
 
 
@@ -42,7 +43,7 @@ def extract_vehicles_from_pdf(pdf_text: str, provider: str | None = None) -> dic
     """
     
     st.write("🔍 **FORDON: Multi-format extraction**")
-    st.info("📝 Supports: If Skadeforsikring, Gjensidige, Tryg")
+    st.info("📝 Supports: If Skadeforsikring, Gjensidige, Ly, Tryg")
     
     if not pdf_text:
         st.error("❌ No PDF text!")
@@ -90,6 +91,18 @@ def extract_vehicles_from_pdf(pdf_text: str, provider: str | None = None) -> dic
         if tryg_vehicles:
             st.write(f"    ✅ {len(tryg_vehicles)} vehicles")
             all_vehicles.extend(tryg_vehicles)
+        else:
+            st.write("    ⊘ No matches")
+    except Exception as e:
+        st.write(f"    ❌ Error: {e}")
+
+    # Try Ly Forsikring
+    st.write("  🔎 **Ly Forsikring**")
+    try:
+        ly_vehicles = extract_ly_vehicles(pdf_text)
+        if ly_vehicles:
+            st.write(f"    ✅ {len(ly_vehicles)} vehicles")
+            all_vehicles.extend(ly_vehicles)
         else:
             st.write("    ⊘ No matches")
     except Exception as e:
@@ -209,12 +222,14 @@ def transform_data(extracted: dict) -> dict:
         return out
     
     provider = (extracted.get("vehicle_provider") or "").strip().lower()
-    if provider in ("tryg", "gjensidige", "if", "if skadeforsikring"):
+    if provider in ("tryg", "gjensidige", "if", "if skadeforsikring", "ly", "ly forsikring"):
         st.write(f"🔀 Provider override: {provider}")
         if provider in ("if", "if skadeforsikring"):
             vehicles = extract_if_vehicles(pdf_text)
         elif provider == "gjensidige":
             vehicles = extract_gjensidige_vehicles(pdf_text)
+        elif provider in ("ly", "ly forsikring"):
+            vehicles = extract_ly_vehicles(pdf_text)
         else:
             vehicles = extract_tryg_vehicles(pdf_text)
         categorized = _categorize_vehicles(vehicles)

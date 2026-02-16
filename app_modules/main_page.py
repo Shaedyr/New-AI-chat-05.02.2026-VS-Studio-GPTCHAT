@@ -177,7 +177,7 @@ def run():
     with col_provider:
         vehicle_provider = st.selectbox(
             "Vehicle PDF type",
-            ["Auto-detect", "Tryg", "Gjensidige", "If"],
+            ["Auto-detect", "Tryg", "Gjensidige", "If", "Ly"],
             index=0,
             help="Select insurer format for vehicle extraction"
         )

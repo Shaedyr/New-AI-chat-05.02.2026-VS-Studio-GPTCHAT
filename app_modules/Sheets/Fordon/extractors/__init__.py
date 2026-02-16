@@ -8,4 +8,6 @@ Each company has its own extractor file.
 __all__ = [
     'if_skadeforsikring',
     'gjensidige',
+    'ly',
+    'tryg',
 ]
