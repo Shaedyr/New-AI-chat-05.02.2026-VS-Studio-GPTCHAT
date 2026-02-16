@@ -20,7 +20,13 @@ def fill_excel(template_bytes, field_values, summary_text):
     Returns:
         Filled Excel file as bytes
     """
-    wb = load_workbook(filename=BytesIO(template_bytes))
+    # Keep partial rich-text formatting in template header cells
+    # (e.g., "Forsikringssum (kr) / Premium" where only "Premium" is blue).
+    try:
+        wb = load_workbook(filename=BytesIO(template_bytes), rich_text=True)
+    except TypeError:
+        # Fallback for environments where rich_text is not supported.
+        wb = load_workbook(filename=BytesIO(template_bytes))
 
     # DEBUG: Show what data we received
     st.write("🔍 **EXCEL_FILLER DEBUG:**")
