@@ -36,6 +36,12 @@ VEHICLE_COLUMNS = {
 
 PREMIUM_FONT_COLOR = "0129F6"
 
+NUMERIC_CELL_STYLE = {
+    "number_format": "0",
+    "align_horizontal": "right",
+    "font_bold": False,
+}
+
 
 def _to_excel_number(value):
     """Convert plain numeric strings (e.g. '10 500') to numbers for Excel formulas."""
@@ -335,9 +341,13 @@ def transform_data(extracted: dict) -> dict:
                     premium = vehicle.get("premium", "")
                     if sum_insured:
                         out[cell_ref] = _to_excel_number(sum_insured)
+                        if out[cell_ref] != "":
+                            cell_styles[cell_ref] = dict(NUMERIC_CELL_STYLE)
                     elif premium:
                         out[cell_ref] = _to_excel_number(premium)
-                        cell_styles[cell_ref] = {"font_color": PREMIUM_FONT_COLOR}
+                        style = dict(NUMERIC_CELL_STYLE)
+                        style["font_color"] = PREMIUM_FONT_COLOR
+                        cell_styles[cell_ref] = style
                     else:
                         out[cell_ref] = ""
                     continue
@@ -345,6 +355,8 @@ def transform_data(extracted: dict) -> dict:
                 value = vehicle.get(field, "")
                 if field in {"annual_mileage", "deductible"}:
                     value = _to_excel_number(value)
+                    if value != "":
+                        cell_styles[cell_ref] = dict(NUMERIC_CELL_STYLE)
                 out[cell_ref] = value
             
             details = f"{vehicle['registration']} - {vehicle['make_model_year']}"

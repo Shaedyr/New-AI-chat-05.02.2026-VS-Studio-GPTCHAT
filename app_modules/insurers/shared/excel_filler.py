@@ -106,13 +106,27 @@ def fill_excel(template_bytes, field_values, summary_text):
 
                         style_cfg = cell_styles.get(cell_ref, {})
                         font_color = style_cfg.get("font_color")
-                        if font_color:
-                            rgb = str(font_color).replace("#", "").upper()
-                            if len(rgb) == 6:
-                                rgb = f"FF{rgb}"
+                        font_bold = style_cfg.get("font_bold")
+                        if font_color or font_bold is not None:
                             new_font = copy(cell.font)
-                            new_font.color = Color(rgb=rgb)
+                            if font_color:
+                                rgb = str(font_color).replace("#", "").upper()
+                                if len(rgb) == 6:
+                                    rgb = f"FF{rgb}"
+                                new_font.color = Color(rgb=rgb)
+                            if font_bold is not None:
+                                new_font.bold = bool(font_bold)
                             cell.font = new_font
+
+                        number_format = style_cfg.get("number_format")
+                        if number_format:
+                            cell.number_format = str(number_format)
+
+                        align_horizontal = style_cfg.get("align_horizontal")
+                        if align_horizontal:
+                            new_alignment = copy(cell.alignment)
+                            new_alignment.horizontal = str(align_horizontal)
+                            cell.alignment = new_alignment
 
                         st.write(f"    ✓ Filled {cell_ref}: {str(value)[:50]}")
                     except Exception as e:
