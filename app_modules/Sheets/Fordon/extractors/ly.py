@@ -191,14 +191,33 @@ def _section_between(text: str, start_pattern: str, end_pattern: str) -> str:
 def _extract_selected_leasing(section: str) -> str:
     if not section:
         return ""
+
+    # Only inspect the explicit "som er valgt" block to avoid false positives
+    # from the later "som ikke er valgt" block.
     selected = re.search(
-        r"Kundevalgte\s+tilleggsdekninger\s+som\s+er\s+valgt(.{0,700})",
+        r"Kundevalgte\s+tilleggsdekninger\s+som\s+er\s+valgt",
         section,
-        re.IGNORECASE | re.DOTALL,
+        re.IGNORECASE,
     )
     if not selected:
         return ""
-    return "Leasingavtale" if re.search(r"M01\s+Leasingavtale", selected.group(1), re.IGNORECASE) else ""
+
+    tail = section[selected.end() :]
+    stop_markers = [
+        r"Kundevalgte\s+tilleggsdekninger\s+som\s+ikke\s+er\s+valgt",
+        r"Kj\S*\s+som\s+inng\S*\s+i\s+gruppen",
+        r"Tilhengere\s+som\s+inng\S*\s+i\s+gruppen",
+        r"Registreringsnummer\s+UREG",
+        r"Side\s+\d+",
+    ]
+    end = len(tail)
+    for marker in stop_markers:
+        m = re.search(marker, tail, re.IGNORECASE)
+        if m:
+            end = min(end, m.start())
+
+    selected_block = tail[:end]
+    return "Leasingavtale" if re.search(r"\bM01\s+Leasingavtale\b", selected_block, re.IGNORECASE) else ""
 
 
 def _extract_amount(text: str, pattern: str) -> str:
@@ -214,11 +233,30 @@ def _extract_line_value(text: str, pattern: str) -> str:
     match = re.search(pattern, text, re.IGNORECASE)
     if not match:
         return ""
-    return _compact_spaces(match.group(1))
+    value = _compact_spaces(match.group(1))
+    return "" if _looks_like_field_label(value) else value
 
 
 def _normalize_registration(value: str) -> str:
     return re.sub(r"\s+", "", value or "").upper()
+
+
+
+
+def _looks_like_field_label(value: str) -> bool:
+    normalized = _normalize_text(value)
+    if not normalized:
+        return False
+
+    field_prefixes = (
+        "arsmodell",
+        "maskintype",
+        "registreringsnummer",
+        "kundevalgte",
+        "forsikringen",
+        "forsikringssum",
+    )
+    return normalized.startswith(field_prefixes)
 
 
 def _compact_spaces(value: str) -> str:
