@@ -6,6 +6,7 @@ This file coordinates all vehicle extractors.
 Each insurance company has its own extractor in extractors/
 """
 
+import re
 import streamlit as st
 from app_modules.Sheets.Fordon.extractors.if_skadeforsikring import extract_if_vehicles
 from app_modules.Sheets.Fordon.extractors.gjensidige import extract_gjensidige_vehicles
@@ -34,6 +35,34 @@ VEHICLE_COLUMNS = {
 }
 
 PREMIUM_FONT_COLOR = "0129F6"
+
+
+def _to_excel_number(value):
+    """Convert plain numeric strings (e.g. '10 500') to numbers for Excel formulas."""
+    if value is None:
+        return ""
+    if isinstance(value, (int, float)):
+        return value
+    if not isinstance(value, str):
+        return value
+
+    raw = value.strip().replace(" ", " ")
+    if not raw:
+        return ""
+
+    # Keep mixed values as text (e.g. "3 000/6 000", "70%", "20 000 km").
+    if "/" in raw or "%" in raw:
+        return value
+    if re.search(r"[^0-9\s.,]", raw):
+        return value
+    if not re.fullmatch(r"[0-9][0-9\s.,]*", raw):
+        return value
+
+    digits = re.sub(r"\D", "", raw)
+    if not digits:
+        return value
+
+    return int(digits)
 
 
 def _looks_like_ly_document(pdf_text: str) -> bool:
@@ -305,15 +334,18 @@ def transform_data(extracted: dict) -> dict:
                     sum_insured = vehicle.get("sum_insured", "")
                     premium = vehicle.get("premium", "")
                     if sum_insured:
-                        out[cell_ref] = sum_insured
+                        out[cell_ref] = _to_excel_number(sum_insured)
                     elif premium:
-                        out[cell_ref] = premium
+                        out[cell_ref] = _to_excel_number(premium)
                         cell_styles[cell_ref] = {"font_color": PREMIUM_FONT_COLOR}
                     else:
                         out[cell_ref] = ""
                     continue
 
-                out[cell_ref] = vehicle.get(field, "")
+                value = vehicle.get(field, "")
+                if field in {"annual_mileage", "deductible"}:
+                    value = _to_excel_number(value)
+                out[cell_ref] = value
             
             details = f"{vehicle['registration']} - {vehicle['make_model_year']}"
             if vehicle.get('leasing'):
