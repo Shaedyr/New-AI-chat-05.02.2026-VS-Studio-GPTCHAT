@@ -95,6 +95,28 @@ def _clean_label(label: str) -> str:
     return re.sub(r"\s+", " ", (label or "").strip(" .,:;|-"))
 
 
+def _clean_virksomhet(label: str) -> str:
+    value = _clean_label(label)
+    if not value:
+        return ""
+
+    # IF/scan text often appends right-column labels on same line.
+    stop_markers = (
+        r"\bbrannalarm\b",
+        r"\bkrigsomr",
+        r"\btyverisikring\b",
+        r"\bforsikrede\b",
+        r"\bdekning\b",
+        r"\berstatningsgrunnlag\b",
+        r"\bforsikringssum\b",
+        r"\begenandel\b",
+    )
+    for marker in stop_markers:
+        value = re.split(marker, value, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+
+    return value.strip(" .,:;|-")
+
+
 def _extract_if_entry(pdf_text: str, normalized: str) -> dict:
     entry = dict(DEFAULT_ENTRY)
 
@@ -106,7 +128,14 @@ def _extract_if_entry(pdf_text: str, normalized: str) -> dict:
         pdf_text,
     )
     if virksomhet_match:
-        entry["virksomhet"] = _clean_label(virksomhet_match.group(1))
+        entry["virksomhet"] = _clean_virksomhet(virksomhet_match.group(1))
+    if not entry["virksomhet"]:
+        virksomhet_table = _first_match(
+            [r"virksomhet\s+omsetning\s+(.+?)\s+[0-9][0-9\s.,]{3,}\s*kr"],
+            normalized,
+        )
+        if virksomhet_table:
+            entry["virksomhet"] = _clean_virksomhet(virksomhet_table.group(1))
 
     omsetning_match = _first_match(
         [
@@ -118,29 +147,32 @@ def _extract_if_entry(pdf_text: str, normalized: str) -> dict:
     if omsetning_match:
         entry["annual_turnover_2024"] = omsetning_match.group(1)
 
-    bedrift_row = _first_match(
-        [
-            r"bedriftsansvar\s+([0-9]+\s*g|[0-9][0-9\s.,]{3,})(?:\s+([0-9][0-9\s.,]{3,}))?(?:\s+([0-9][0-9\s.,]{3,}))?",
-        ],
-        normalized,
-    )
-    if bedrift_row:
-        entry["bedriftsansvar"] = bedrift_row.group(1)
-        if bedrift_row.group(2):
-            entry["egenandel_ansvar"] = bedrift_row.group(2)
+    ansvar_start = normalized.find("ansvarsforsikring")
+    ansvar_section = normalized[ansvar_start : ansvar_start + 7000] if ansvar_start >= 0 else normalized
 
-    produkt_row = _first_match(
+    bedrift_sum = _first_match(
         [
-            r"produktansvar\s+([0-9]+\s*g|[0-9][0-9\s.,]{3,})(?:\s+([0-9][0-9\s.,]{3,}))?(?:\s+([0-9][0-9\s.,]{3,}))?",
+            r"bedriftsansvar(?:.{0,220}?forsikringssum\s*:?\s*)([0-9]+\s*g|[0-9][0-9\s.,]{3,})",
+            r"bedriftsansvar\s+([0-9]+\s*g)",
         ],
-        normalized,
+        ansvar_section,
     )
-    if produkt_row:
-        entry["produktansvar"] = produkt_row.group(1)
+    if bedrift_sum:
+        entry["bedriftsansvar"] = bedrift_sum.group(1)
+
+    produkt_sum = _first_match(
+        [
+            r"produktansvar(?:.{0,220}?forsikringssum\s*:?\s*)([0-9]+\s*g|[0-9][0-9\s.,]{3,})",
+            r"produktansvar\s+([0-9]+\s*g)",
+        ],
+        ansvar_section,
+    )
+    if produkt_sum:
+        entry["produktansvar"] = produkt_sum.group(1)
 
     egenandel_match = _first_match(
         [r"egenandel\s+per\s+skade\s*[:\-]?\s*([0-9][0-9\s.,]{3,})"],
-        normalized,
+        ansvar_section,
     )
     if egenandel_match and not entry["egenandel_ansvar"]:
         entry["egenandel_ansvar"] = egenandel_match.group(1)
