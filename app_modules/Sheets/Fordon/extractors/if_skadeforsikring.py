@@ -54,6 +54,11 @@ def extract_if_vehicles(pdf_text: str) -> list:
         mileage = _extract_mileage(after_anchor)
         deductible = _extract_deductible(after_anchor)
         leasing = _extract_leasing(after_anchor)
+        if not leasing:
+            # Some IF layouts place leasing line immediately before the
+            # "Registreringsnummer" line for the same vehicle.
+            pre_anchor = pdf_text[max(0, anchor.start() - 240):anchor.start()]
+            leasing = _extract_leasing(pre_anchor)
         premium = _extract_premium(section, reg)
         sum_insured = _extract_sum_insured(after_anchor)
 
