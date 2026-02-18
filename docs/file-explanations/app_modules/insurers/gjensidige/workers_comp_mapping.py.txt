@@ -1,0 +1,24 @@
+File: app_modules/insurers/gjensidige/workers_comp_mapping.py
+Purpose: Insurer-specific implementation module.
+Line count: 139
+
+Module summary:
+Gjensidige-specific mapping for the Yrkesskade sheet.
+
+Key functions:
+- _normalize_text(text)
+- _normalize_digits(value)
+- _extract_amount(line)
+- _extract_count(normalized_line, kind)
+- _extract_row_values(pdf_text, label_patterns)
+- transform_data(extracted): Return dynamic Excel mapping (cell_ref -> value) for Yrkesskade sheet.
+
+Classes:
+- None detected
+
+Imports:
+- from __future__ import ...
+- re
+
+Notes:
+- No immediate issues from static scan.

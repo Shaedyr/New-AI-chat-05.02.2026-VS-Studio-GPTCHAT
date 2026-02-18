@@ -1,0 +1,31 @@
+File: app_modules/Sheets/Fordon/extractors/gjensidige.py
+Purpose: Vehicle extractor module for one insurer/PDF format.
+Line count: 498
+
+Module summary:
+Gjensidige extractor for Fordon sheet.
+
+Key functions:
+- extract_gjensidige_vehicles(pdf_text): Extract vehicles from a Gjensidige PDF text dump.
+- _extract_registered_cars(pdf_text, seen): Extract registered cars from two common OCR formats:
+- _extract_unregistered_tractors(pdf_text): Extract unregistered tractors + MASKINLOSORE.
+- _slice_context(text, center, before, after): Return bounded text context around a position.
+- _find_best_vehicle_context(full_text, vehicle_hint, fallback_pos): Prefer the detailed vehicle block when it exists.
+- _extract_leasing(section, full_text, reg): Extract leasing company.
+- _extract_bonus(full_text, reg): Extract bonus percentage.
+- _normalize_digits(value): Return digits only.
+- _extract_premium_after_position(text, start_pos): Extract first numeric amount after a known vehicle token (typically row premium).
+- _extract_premium_from_window(text): Extract likely premium from a short overview window.
+- _normalize_ocr_text(text): Normalize common OCR and mojibake artifacts for pattern matching.
+- _extract_sum_insured(text): Extract Forsikringssum when explicitly labeled.
+- _extract_annual_mileage(text): Extract annual mileage or annual driving time when present.
+
+Classes:
+- None detected
+
+Imports:
+- from __future__ import ...
+- re
+
+Notes:
+- No immediate issues from static scan.

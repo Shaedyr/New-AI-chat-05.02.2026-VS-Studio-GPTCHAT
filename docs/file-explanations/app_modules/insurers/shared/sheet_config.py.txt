@@ -1,0 +1,24 @@
+File: app_modules/insurers/shared/sheet_config.py
+Purpose: Shared insurer pipeline module used by multiple insurer formats.
+Line count: 100
+
+Module summary:
+Centralized configuration for all Excel sheets.
+
+Key functions:
+- get_sheet_mapping(sheet_name): Get the cell mapping for a specific sheet.
+- get_transform_function(sheet_name): Get the transform function for a specific sheet.
+- transform_for_sheet(sheet_name, data): Transform data for a specific sheet using its transform function.
+
+Classes:
+- None detected
+
+Imports:
+- from app_modules.Sheets.Sammendrag.mapping import ...
+- from app_modules.insurers.shared.general_liability_mapping import ...
+- from app_modules.insurers.shared.project_entrepreneur_mapping import ...
+- from app_modules.insurers.shared.vehicle_mapping import ...
+- from app_modules.insurers.shared.workers_comp_mapping import ...
+
+Notes:
+- No immediate issues from static scan.

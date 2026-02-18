@@ -1,0 +1,18 @@
+File: app_modules/Sheets/Sammendrag/proff_getter.py
+Purpose: Sheet-specific module used by the Excel fill workflow.
+Line count: 11
+
+Module summary:
+Placeholder - no automatic fetching
+
+Key functions:
+- fetch_proff_info(org_number): Returns empty dict - manual entry is used instead
+
+Classes:
+- None detected
+
+Imports:
+- None detected
+
+Notes:
+- No immediate issues from static scan.

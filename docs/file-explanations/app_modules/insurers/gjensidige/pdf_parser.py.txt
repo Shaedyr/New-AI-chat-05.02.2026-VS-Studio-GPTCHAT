@@ -1,0 +1,15 @@
+File: app_modules/insurers/gjensidige/pdf_parser.py
+Purpose: Insurer-specific implementation module.
+Line count: 3
+
+Key functions:
+- None detected
+
+Classes:
+- None detected
+
+Imports:
+- from app_modules.insurers.shared.pdf_parser import ...
+
+Notes:
+- No immediate issues from static scan.

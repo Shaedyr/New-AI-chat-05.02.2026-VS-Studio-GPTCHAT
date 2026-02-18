@@ -1,0 +1,27 @@
+File: app_modules/insurers/shared/vehicle_mapping.py
+Purpose: Shared insurer pipeline module used by multiple insurer formats.
+Line count: 385
+
+Module summary:
+FORDON SHEET - MAIN ORCHESTRATOR (shared)
+
+Key functions:
+- _to_excel_number(value): Convert plain numeric strings (e.g. '10 500') to numbers for Excel formulas.
+- _looks_like_ly_document(pdf_text)
+- extract_vehicles_from_pdf(pdf_text, provider): Main extraction orchestrator.
+- _categorize_vehicles(vehicles): Categorize vehicles by type.
+- transform_data(extracted): Transform extracted vehicle data to Excel cell mappings.
+
+Classes:
+- None detected
+
+Imports:
+- from app_modules.Sheets.Fordon.extractors.gjensidige import ...
+- from app_modules.Sheets.Fordon.extractors.if_skadeforsikring import ...
+- from app_modules.Sheets.Fordon.extractors.ly import ...
+- from app_modules.Sheets.Fordon.extractors.tryg import ...
+- re
+- streamlit
+
+Notes:
+- No immediate issues from static scan.

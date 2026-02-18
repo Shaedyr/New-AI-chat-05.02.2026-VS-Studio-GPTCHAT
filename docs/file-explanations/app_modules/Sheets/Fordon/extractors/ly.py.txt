@@ -1,0 +1,32 @@
+File: app_modules/Sheets/Fordon/extractors/ly.py
+Purpose: Vehicle extractor module for one insurer/PDF format.
+Line count: 299
+
+Module summary:
+Ly Forsikring extractor for Fordon sheet.
+
+Key functions:
+- extract_ly_vehicles(pdf_text): Extract vehicles from Ly Forsikring PDF text.
+- _extract_group_defaults(text)
+- _extract_group_table_vehicles(pdf_text, defaults, seen_keys)
+- _extract_unregistered_machines(pdf_text, seen_keys)
+- _section_between(text, start_pattern, end_pattern)
+- _extract_selected_leasing(section)
+- _extract_amount(text, pattern)
+- _extract_line_value(text, pattern)
+- _normalize_registration(value)
+- _looks_like_field_label(value)
+- _compact_spaces(value)
+- _normalize_text(value)
+- _normalize_amount(value)
+- _slice_context(text, center, before, after)
+
+Classes:
+- None detected
+
+Imports:
+- from __future__ import ...
+- re
+
+Notes:
+- No immediate issues from static scan.

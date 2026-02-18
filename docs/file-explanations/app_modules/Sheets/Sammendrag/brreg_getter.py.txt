@@ -1,0 +1,20 @@
+File: app_modules/Sheets/Sammendrag/brreg_getter.py
+Purpose: Sheet-specific module used by the Excel fill workflow.
+Line count: 66
+
+Module summary:
+Full BRREG getter implementation placed inside the Sammendrag sheet folder.
+
+Key functions:
+- _normalize_address(addr_obj)
+- fetch_brreg_info(query): Query BRREG by orgnr (preferred). If query is not numeric, return empty dict.
+
+Classes:
+- None detected
+
+Imports:
+- logging
+- requests
+
+Notes:
+- No immediate issues from static scan.

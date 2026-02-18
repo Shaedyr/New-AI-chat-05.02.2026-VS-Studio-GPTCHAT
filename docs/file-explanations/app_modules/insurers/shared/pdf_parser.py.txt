@@ -1,0 +1,25 @@
+File: app_modules/insurers/shared/pdf_parser.py
+Purpose: Shared insurer pipeline module used by multiple insurer formats.
+Line count: 394
+
+Key functions:
+- extract_text_from_pdf(pdf_bytes): Extracts text from PDF pages.
+- _ocr_text_from_pdf(pdf_bytes, max_pages, start_page, resolution): Fallback OCR for scanned PDFs.
+- _needs_more_ocr(text): Heuristic: if OCR text mentions vehicle groups but we still see no registrations,
+- _has_registrations(text): Return True if we can detect any registration-like tokens in text.
+- _needs_ocr_without_regs(text): Trigger OCR if we see vehicle-related keywords but no registrations.
+- _needs_highres_ocr(text): Trigger a high-res OCR pass when the document clearly references a vehicle list
+- extract_fields_from_pdf(pdf_bytes): Extracts fields from PDF:
+- run()
+
+Classes:
+- None detected
+
+Imports:
+- from io import ...
+- pdfplumber
+- re
+- streamlit
+
+Notes:
+- No immediate issues from static scan.

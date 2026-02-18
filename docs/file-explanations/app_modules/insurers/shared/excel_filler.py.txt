@@ -1,0 +1,21 @@
+File: app_modules/insurers/shared/excel_filler.py
+Purpose: Shared insurer pipeline module used by multiple insurer formats.
+Line count: 183
+
+Key functions:
+- fill_excel(template_bytes, field_values, summary_text): Fill Excel template with data from field_values.
+- run(): Streamlit page view for the excel filler module
+
+Classes:
+- None detected
+
+Imports:
+- from app_modules.insurers.shared.sheet_config import ...
+- from copy import ...
+- from io import ...
+- from openpyxl import ...
+- from openpyxl.styles import ...
+- streamlit
+
+Notes:
+- No immediate issues from static scan.

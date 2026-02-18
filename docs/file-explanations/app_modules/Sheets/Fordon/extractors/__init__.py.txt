@@ -1,0 +1,18 @@
+File: app_modules/Sheets/Fordon/extractors/__init__.py
+Purpose: Package marker file used to make this folder importable as a Python package.
+Line count: 13
+
+Module summary:
+Vehicle extractors for different insurance companies.
+
+Key functions:
+- None detected
+
+Classes:
+- None detected
+
+Imports:
+- None detected
+
+Notes:
+- No immediate issues from static scan.

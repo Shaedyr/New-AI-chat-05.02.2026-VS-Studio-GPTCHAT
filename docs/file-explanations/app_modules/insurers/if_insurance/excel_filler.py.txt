@@ -1,0 +1,15 @@
+File: app_modules/insurers/if_insurance/excel_filler.py
+Purpose: Insurer-specific implementation module.
+Line count: 3
+
+Key functions:
+- None detected
+
+Classes:
+- None detected
+
+Imports:
+- from app_modules.insurers.shared.excel_filler import ...
+
+Notes:
+- No immediate issues from static scan.

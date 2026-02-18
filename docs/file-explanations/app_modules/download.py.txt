@@ -1,0 +1,17 @@
+File: app_modules/download.py
+Purpose: Project support module used by the Streamlit workflow.
+Line count: 38
+
+Key functions:
+- download_excel_file(excel_bytes, company_name): Displays a download button for the final Excel file.
+- run()
+
+Classes:
+- None detected
+
+Imports:
+- from datetime import ...
+- streamlit
+
+Notes:
+- No immediate issues from static scan.

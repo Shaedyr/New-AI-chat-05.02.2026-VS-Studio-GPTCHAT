@@ -1,0 +1,30 @@
+File: app_modules/Sheets/Fordon/extractors/tryg.py
+Purpose: Vehicle extractor module for one insurer/PDF format.
+Line count: 682
+
+Module summary:
+TRYG FORSIKRING FORMAT EXTRACTOR - ENHANCED VERSION
+
+Key functions:
+- extract_tryg_vehicles(pdf_text): Extract vehicles from Tryg Forsikring PDF.
+- _extract_detailed_format(pdf_text, seen): Extract vehicles using detailed format with explicit "Kjennemerke" label.
+- _normalize_key(s): Normalize keys for comparison (handles Norwegian chars and encoding).
+- _normalize_number(val): Extract a clean numeric value like '20 000' or '6 000'.
+- _is_valid_coverage(val)
+- _extract_key_values(section): Parse key/value lines inside a section, supporting:
+- _extract_specification_format(pdf_text, seen): Extract vehicles from "Forsikringsbevis | Spesifikasjon" sections.
+- _extract_table_fields(section): Try to parse the coverage row in the specification table.
+- _extract_overview_format(pdf_text, seen): Extract vehicles from overview section.
+- _extract_from_headers(pdf_text, seen): Extract from section headers like "Campingvogn og tilhenger - Vilkår PAU18200"
+- _standardize_vehicle(vehicle): Convert Tryg vehicle data to standard format expected by mapping.py
+- categorize_tryg_vehicle(vehicle): Categorize a Tryg vehicle based on its type field.
+
+Classes:
+- None detected
+
+Imports:
+- re
+- streamlit
+
+Notes:
+- No immediate issues from static scan.

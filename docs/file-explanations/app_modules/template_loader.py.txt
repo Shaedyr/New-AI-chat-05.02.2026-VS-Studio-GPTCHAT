@@ -1,0 +1,17 @@
+File: app_modules/template_loader.py
+Purpose: Project support module used by the Streamlit workflow.
+Line count: 24
+
+Key functions:
+- _fetch_template_bytes()
+- load_template()
+
+Classes:
+- None detected
+
+Imports:
+- requests
+- streamlit
+
+Notes:
+- No immediate issues from static scan.

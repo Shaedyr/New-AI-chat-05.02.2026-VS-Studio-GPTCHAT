@@ -1,0 +1,22 @@
+File: app_modules/Sheets/Sammendrag/summery_getter.py
+Purpose: Sheet-specific module used by the Excel fill workflow.
+Line count: 151
+
+Key functions:
+- _clean_text(t): Remove weird whitespace and shorten long text.
+- summary_from_brreg(data): Creates a simple summary using Brønnøysund data.
+- summary_from_wikipedia(name): Attempts to fetch a short summary from Wikipedia.
+- summary_from_duckduckgo(query): Fallback summary using DuckDuckGo Instant Answer API.
+- generate_company_summary(company_data): Attempts summary in this order:
+- run()
+
+Classes:
+- None detected
+
+Imports:
+- re
+- requests
+- streamlit
+
+Notes:
+- No immediate issues from static scan.

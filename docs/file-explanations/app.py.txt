@@ -1,0 +1,19 @@
+File: app.py
+Purpose: Application entry point that starts the Streamlit app and routes to the main page module.
+Line count: 41
+
+Key functions:
+- main()
+
+Classes:
+- None detected
+
+Imports:
+- app_modules.input
+- from app_modules import ...
+- from app_modules.Sheets.Sammendrag import ...
+- from app_modules.insurers.shared import ...
+- streamlit
+
+Notes:
+- No immediate issues from static scan.

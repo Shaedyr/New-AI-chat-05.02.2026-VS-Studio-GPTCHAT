@@ -1,0 +1,25 @@
+File: app_modules/Sheets/Fordon/extractors/if_skadeforsikring.py
+Purpose: Vehicle extractor module for one insurer/PDF format.
+Line count: 145
+
+Module summary:
+IF SKADEFORSIKRING FORMAT EXTRACTOR.
+
+Key functions:
+- extract_if_vehicles(pdf_text): Extract vehicles from IF PDFs.
+- _extract_year(text)
+- _extract_mileage(text)
+- _extract_deductible(text)
+- _extract_premium(text, reg)
+- _extract_sum_insured(text)
+- _extract_leasing(text)
+
+Classes:
+- None detected
+
+Imports:
+- from __future__ import ...
+- re
+
+Notes:
+- No immediate issues from static scan.

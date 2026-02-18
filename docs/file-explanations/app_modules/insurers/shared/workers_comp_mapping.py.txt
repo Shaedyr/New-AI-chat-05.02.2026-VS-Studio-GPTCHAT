@@ -1,0 +1,20 @@
+File: app_modules/insurers/shared/workers_comp_mapping.py
+Purpose: Shared insurer pipeline module used by multiple insurer formats.
+Line count: 47
+
+Module summary:
+Yrkesskade mapping orchestrator (shared).
+
+Key functions:
+- _detect_provider(pdf_text)
+- transform_data(extracted): Dynamic mapping entry point for Yrkesskade sheet.
+
+Classes:
+- None detected
+
+Imports:
+- from __future__ import ...
+- from app_modules.insurers.gjensidige.workers_comp_mapping import ...
+
+Notes:
+- No immediate issues from static scan.

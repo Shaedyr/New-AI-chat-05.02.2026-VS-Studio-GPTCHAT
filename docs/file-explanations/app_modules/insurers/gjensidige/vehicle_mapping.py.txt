@@ -1,0 +1,15 @@
+File: app_modules/insurers/gjensidige/vehicle_mapping.py
+Purpose: Insurer-specific implementation module.
+Line count: 11
+
+Key functions:
+- transform_data(extracted): Gjensidige-specific vehicle mapping wrapper.
+
+Classes:
+- None detected
+
+Imports:
+- from app_modules.insurers.shared import ...
+
+Notes:
+- No immediate issues from static scan.

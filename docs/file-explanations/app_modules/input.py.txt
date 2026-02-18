@@ -1,0 +1,17 @@
+File: app_modules/input.py
+Purpose: Project support module used by the Streamlit workflow.
+Line count: 79
+
+Key functions:
+- get_user_inputs(): Handles:
+- run()
+
+Classes:
+- None detected
+
+Imports:
+- from app_modules.company_data import ...
+- streamlit
+
+Notes:
+- No immediate issues from static scan.

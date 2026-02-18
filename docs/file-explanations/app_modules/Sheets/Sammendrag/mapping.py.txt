@@ -1,0 +1,18 @@
+File: app_modules/Sheets/Sammendrag/mapping.py
+Purpose: Sheet mapping module that maps extracted fields into Excel cells.
+Line count: 91
+
+Module summary:
+Mapping configuration for the Sammendrag (Summary) sheet.
+
+Key functions:
+- transform_data(extracted): Transform raw extracted data into the format expected by the Sammendrag sheet.
+
+Classes:
+- None detected
+
+Imports:
+- None detected
+
+Notes:
+- No immediate issues from static scan.

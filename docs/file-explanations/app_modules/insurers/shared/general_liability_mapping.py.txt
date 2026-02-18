@@ -1,0 +1,18 @@
+File: app_modules/insurers/shared/general_liability_mapping.py
+Purpose: Shared insurer pipeline module used by multiple insurer formats.
+Line count: 419
+
+Parsing status:
+AST parse error: invalid non-printable character U+FEFF (<unknown>, line 1)
+
+Key functions:
+- None detected
+
+Classes:
+- None detected
+
+Imports:
+- None detected
+
+Notes:
+- No immediate issues from static scan.

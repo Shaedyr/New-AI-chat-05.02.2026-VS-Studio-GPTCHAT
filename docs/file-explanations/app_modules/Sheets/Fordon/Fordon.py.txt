@@ -1,0 +1,15 @@
+File: app_modules/Sheets/Fordon/Fordon.py
+Purpose: Sheet-specific module used by the Excel fill workflow.
+Line count: 1
+
+Key functions:
+- None detected
+
+Classes:
+- None detected
+
+Imports:
+- None detected
+
+Notes:
+- File is currently empty (placeholder/stub).

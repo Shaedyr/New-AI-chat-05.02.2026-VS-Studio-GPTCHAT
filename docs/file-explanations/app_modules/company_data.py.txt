@@ -1,0 +1,19 @@
+File: app_modules/company_data.py
+Purpose: Project support module used by the Streamlit workflow.
+Line count: 112
+
+Key functions:
+- search_brreg_live(name): Live search for companies in Brønnøysund.
+- fetch_company_by_org(org_number): Fetch full company details using org number.
+- format_company_data(api_data): Converts raw Brønnøysund API data into a clean dictionary
+- run()
+
+Classes:
+- None detected
+
+Imports:
+- requests
+- streamlit
+
+Notes:
+- No immediate issues from static scan.

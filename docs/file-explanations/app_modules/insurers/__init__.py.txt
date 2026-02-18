@@ -1,0 +1,18 @@
+File: app_modules/insurers/__init__.py
+Purpose: Package marker file used to make this folder importable as a Python package.
+Line count: 1
+
+Module summary:
+Insurer-specific modules.
+
+Key functions:
+- None detected
+
+Classes:
+- None detected
+
+Imports:
+- None detected
+
+Notes:
+- No immediate issues from static scan.

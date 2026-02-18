@@ -1,0 +1,21 @@
+File: app_modules/main_page.py
+Purpose: Project support module used by the Streamlit workflow.
+Line count: 397
+
+Key functions:
+- run()
+
+Classes:
+- None detected
+
+Imports:
+- from app_modules.Sheets.Sammendrag.summery_getter import ...
+- from app_modules.company_data import ...
+- from app_modules.download import ...
+- from app_modules.insurers.shared.excel_filler import ...
+- from app_modules.insurers.shared.pdf_parser import ...
+- from app_modules.template_loader import ...
+- streamlit
+
+Notes:
+- No immediate issues from static scan.

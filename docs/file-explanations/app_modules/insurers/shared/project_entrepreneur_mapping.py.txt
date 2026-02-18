@@ -1,0 +1,22 @@
+File: app_modules/insurers/shared/project_entrepreneur_mapping.py
+Purpose: Shared insurer pipeline module used by multiple insurer formats.
+Line count: 64
+
+Module summary:
+Prosjekt,entreprenør mapping (shared).
+
+Key functions:
+- _digits(value)
+- _is_if_document(text)
+- _extract_allrisk_amount(pdf_text)
+- transform_data(extracted): Dynamic mapping for the sheet "Prosjekt,entreprenør".
+
+Classes:
+- None detected
+
+Imports:
+- from __future__ import ...
+- re
+
+Notes:
+- No immediate issues from static scan.

@@ -1,0 +1,15 @@
+File: app_modules/Sheets/Sammendrag/merger.py
+Purpose: Sheet-specific module used by the Excel fill workflow.
+Line count: 34
+
+Key functions:
+- merge_company_data(brreg_data, proff_data): Merges BRREG data and Proff.no data into one clean dictionary.
+
+Classes:
+- None detected
+
+Imports:
+- None detected
+
+Notes:
+- No immediate issues from static scan.

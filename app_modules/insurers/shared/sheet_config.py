@@ -28,6 +28,12 @@ from app_modules.insurers.shared.general_liability_mapping import (
     transform_data as transform_alminnelig_ansvar,
 )
 
+# Import Prosjekt,entreprenør mapping (shared dispatcher)
+from app_modules.insurers.shared.project_entrepreneur_mapping import (
+    CELL_MAP as PROSJEKT_ENTREPRENOR_MAP,
+    transform_data as transform_prosjekt_entreprenor,
+)
+
 
 # Master mapping: Excel sheet name -> field mappings
 SHEET_MAPPINGS = {
@@ -35,6 +41,7 @@ SHEET_MAPPINGS = {
     "Fordon": FORDON_MAP,  # Note: Fordon uses dynamic mapping, CELL_MAP is empty
     "Yrkesskade": YRKESSKADE_MAP,  # Dynamic mapping per insurer
     "Alminnelig ansvar": ALMINNELIG_ANSVAR_MAP,  # Dynamic mapping per insurer
+    "Prosjekt,entreprenør": PROSJEKT_ENTREPRENOR_MAP,  # Dynamic mapping (currently IF/Malco)
     # Add other sheets here when you create their mapping files
 }
 
@@ -45,6 +52,7 @@ SHEET_TRANSFORMS = {
     "Fordon": transform_fordon,
     "Yrkesskade": transform_yrkesskade,
     "Alminnelig ansvar": transform_alminnelig_ansvar,
+    "Prosjekt,entreprenør": transform_prosjekt_entreprenor,
     # Add other sheets here when you create their mapping files
 }
 
