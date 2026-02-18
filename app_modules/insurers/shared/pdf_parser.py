@@ -80,7 +80,7 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
     st.write(f"📄 **Extracting text from PDF** ({len(pdf_bytes)} bytes)")
 
     try:
-        text = ""
+        text_parts = []
         with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
             total_pages = len(pdf.pages)
             pages_to_read = min(MAX_PAGES_TO_READ, total_pages)
@@ -99,7 +99,7 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
             for i, page in enumerate(pdf.pages[:pages_to_read]):
                 extracted = page.extract_text()
                 if extracted:
-                    text += extracted + "\n"
+                    text_parts.append(extracted)
                 
                 # Update progress bar for large PDFs
                 if pages_to_read > 20 and i % 5 == 0:
@@ -111,6 +111,8 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
             else:
                 st.write(f"  ✓ Pages extracted: {pages_to_read}")
         
+        text = "\n".join(text_parts)
+
         if text:
             st.success(f"✅ **Total: {len(text)} characters extracted**")
         else:
@@ -201,7 +203,7 @@ def _ocr_text_from_pdf(
         st.warning(f"⚠️ Tesseract not found. Install it to enable OCR. Details: {e}")
         return ""
 
-    text = ""
+    text_parts = []
     try:
         with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
             total_pages = len(pdf.pages)
@@ -219,14 +221,14 @@ def _ocr_text_from_pdf(
                     img = page.to_image(resolution=resolution).original
                     page_text = pytesseract.image_to_string(img, lang=OCR_LANG)
                     if page_text:
-                        text += page_text + "\n"
+                        text_parts.append(page_text)
                 except Exception as e:
                     st.warning(f"⚠️ OCR failed on page {start_page + i + 1}: {e}")
     except Exception as e:
         st.warning(f"⚠️ OCR failed to open PDF: {e}")
         return ""
 
-    return text.strip()
+    return "\n".join(text_parts).strip()
 
 
 def _needs_more_ocr(text: str) -> bool:
@@ -289,11 +291,12 @@ def _needs_highres_ocr(text: str) -> bool:
         return False
     if re.search(r"Minigruppe|Næringsbil|Neringsbil|Oversikt over kj", text, re.IGNORECASE):
         # If we already see vehicle brands, assume list is captured
+        text_lower = text.lower()
         brands = [
             "VOLKSWAGEN", "FORD", "TOYOTA", "MERCEDES", "LAND ROVER",
             "CITROEN", "PEUGEOT", "VOLVO", "BMW", "AUDI", "NISSAN", "RENAULT"
         ]
-        if any(b.lower() in text.lower() for b in brands):
+        if any(b.lower() in text_lower for b in brands):
             return False
         return True
     return False

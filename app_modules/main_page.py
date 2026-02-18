@@ -12,6 +12,15 @@ from app_modules.insurers.shared.excel_filler import fill_excel
 from app_modules.download import download_excel_file
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _extract_fields_from_pdf_cached(pdf_bytes: bytes) -> dict:
+    """
+    Cache PDF field extraction per file content to avoid re-parsing
+    the same uploads on every Streamlit rerun.
+    """
+    return extract_fields_from_pdf(pdf_bytes)
+
+
 def run():
     st.title("📄 PDF → Excel (BRREG + Manual Entry)")
     st.caption("Fetch company information and update Excel automatically")
@@ -199,7 +208,8 @@ def run():
         combined_pdf_text_parts = []
 
         for uploaded_pdf in pdf_uploads:
-            extracted_fields = extract_fields_from_pdf(uploaded_pdf)
+            pdf_bytes = uploaded_pdf.getvalue()
+            extracted_fields = _extract_fields_from_pdf_cached(pdf_bytes)
             if not extracted_fields:
                 continue
 

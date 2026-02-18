@@ -18,6 +18,64 @@ COVERAGE_WORDS = [
 ]
 COVERAGE_RE = re.compile(r"\b(kasko|delkasko|ansvar|brann|tyveri|glass|redning)\b", re.IGNORECASE)
 NUMERIC_FIELDS = {"sum_insured", "deductible", "premium"}
+INVALID_COVERAGE_VALUE_RE = re.compile(
+    r"vilkÃ¥r|vilkÃƒÂ¥r|vilkar|forsikringssum|egenandel|pris",
+    re.IGNORECASE,
+)
+NUMBER_RE = re.compile(r"\d{1,3}(?:[ .]\d{3})+|\d{3,6}")
+ZERO_ONLY_RE = re.compile(r"0+")
+YEAR_RE = re.compile(r"\b(19\d{2}|20\d{2})\b")
+DETAILED_REG_RE = re.compile(r"Kjennemerke\s*\n\s*([A-Z]{2}\d{4,5})", re.IGNORECASE)
+DETAILED_MAKE_RE = re.compile(
+    r"Fabrikat/Ã¥rsmodell\s*\n\s*([A-Za-zÃ†Ã˜Ã…Ã¦Ã¸Ã¥0-9\s\-]+?)(?:\n|Type:)",
+    re.IGNORECASE,
+)
+DETAILED_TYPE_RE = re.compile(
+    r"Type:\s*\n\s*([A-Za-zÃ†Ã˜Ã…Ã¦Ã¸Ã¥\s\-]+?)(?:\n|Forsikringssum)",
+    re.IGNORECASE,
+)
+DETAILED_SUM_RE = re.compile(r"Forsikringssum\s+kr:\s*\n?\s*([\d\s]+)", re.IGNORECASE)
+DETAILED_TABLE_RE = re.compile(
+    r"Kasko\s*\n\s*PAU\d+\s*\n\s*([\d\s]+?)\s*\n\s*([\d\s]+?)\s*\n\s*(\d+)"
+)
+LINE_LABEL_PATTERNS = (
+    (r"Kjennemerke", "registration"),
+    (r"Registreringsnummer", "registration"),
+    (r"Fabrikat/Ã¥rsmodell/Type", "make_model_year"),
+    (r"Fabrikat/Ã¥rsmodell", "make_model_year"),
+    (r"Type", "type"),
+    (r"Forsikringssum\s*kr", "sum_insured"),
+    (r"Forsikringssum", "sum_insured"),
+    (r"Dekning", "coverage"),
+    (r"Egenandel", "deductible"),
+    (r"Pris", "premium"),
+    (r"Ã…rlig kjÃ¸relengde", "annual_mileage"),
+    (r"Bonus", "bonus"),
+    (r"Leasing", "leasing"),
+)
+KEY_MAP = {
+    "kjennemerke": "registration",
+    "registreringsnummer": "registration",
+    "fabrikatarsmodell": "make_model_year",
+    "fabrikatarsmodelltype": "make_model_year",
+    "type": "type",
+    "forsikringssumkr": "sum_insured",
+    "forsikringssum": "sum_insured",
+    "dekning": "coverage",
+    "egenandel": "deductible",
+    "pris": "premium",
+    "arligkjorelengde": "annual_mileage",
+    "bonus": "bonus",
+    "leasing": "leasing",
+}
+SPEC_HEADER_RE = re.compile(
+    r"(?P<header>(?:Motorvogn|Personbil|Varebil|Lastebil|Campingvogn og tilhenger|Tilhenger|Traktor|Moped|Motorsykkel|SnÃ¸scooter|BÃ¥t)[^\n]*?)\s*-\s*VilkÃ¥r\s+[A-Z]{2,4}\d+",
+    re.IGNORECASE,
+)
+SPEC_END_RE = re.compile(
+    r"(Forsikringsbevis\s*\|\s*Spesifikasjon|Avtalenummer|Side\s+\d+\s+av\s+\d+)",
+    re.IGNORECASE,
+)
 
 
 def extract_tryg_vehicles(pdf_text: str) -> list:
@@ -54,11 +112,7 @@ def extract_tryg_vehicles(pdf_text: str) -> list:
     st.write(f"    📊 Total Tryg vehicles extracted: {len(vehicles)}")
     
     # Convert to standard format
-    standardized = []
-    for v in vehicles:
-        standardized.append(_standardize_vehicle(v))
-    
-    return standardized
+    return [_standardize_vehicle(v) for v in vehicles]
 
 
 def _extract_detailed_format(pdf_text: str, seen: set) -> list:
@@ -76,8 +130,7 @@ def _extract_detailed_format(pdf_text: str, seen: set) -> list:
     vehicles = []
     
     # Find all "Kjennemerke" sections
-    pattern = r'Kjennemerke\s*\n\s*([A-Z]{2}\d{4,5})'
-    matches = list(re.finditer(pattern, pdf_text, re.IGNORECASE))
+    matches = list(DETAILED_REG_RE.finditer(pdf_text))
     
     for match in matches:
         registration = match.group(1).strip()
@@ -100,40 +153,25 @@ def _extract_detailed_format(pdf_text: str, seen: set) -> list:
         premium = ""
         
         # Make/Model/Year
-        make_match = re.search(
-            r'Fabrikat/årsmodell\s*\n\s*([A-Za-zÆØÅæøå0-9\s\-]+?)(?:\n|Type:)',
-            section,
-            re.IGNORECASE
-        )
+        make_match = DETAILED_MAKE_RE.search(section)
         if make_match:
             make_model_year = make_match.group(1).strip()
-            year_match = re.search(r'\b(19\d{2}|20\d{2})\b', make_model_year)
+            year_match = YEAR_RE.search(make_model_year)
             if year_match:
                 year = year_match.group(1)
         
         # Type
-        type_match = re.search(
-            r'Type:\s*\n\s*([A-Za-zÆØÅæøå\s\-]+?)(?:\n|Forsikringssum)',
-            section,
-            re.IGNORECASE
-        )
+        type_match = DETAILED_TYPE_RE.search(section)
         if type_match:
             vtype = type_match.group(1).strip()
         
         # Insurance sum
-        sum_match = re.search(
-            r'Forsikringssum\s+kr:\s*\n?\s*([\d\s]+)',
-            section,
-            re.IGNORECASE
-        )
+        sum_match = DETAILED_SUM_RE.search(section)
         if sum_match:
             sum_insured = sum_match.group(1).strip().replace(' ', '')
         
         # Deductible (from table)
-        table_match = re.search(
-            r'Kasko\s*\n\s*PAU\d+\s*\n\s*([\d\s]+?)\s*\n\s*([\d\s]+?)\s*\n\s*(\d+)',
-            section
-        )
+        table_match = DETAILED_TABLE_RE.search(section)
         if table_match:
             deductible = table_match.group(2).strip().replace(' ', '')
             premium = table_match.group(3).strip().replace(' ', '')
@@ -173,12 +211,12 @@ def _normalize_number(val: str) -> str:
     # If letters remain (other than 'kr'), treat as invalid
     if re.search(r"[a-zæøå]", tmp):
         return ""
-    m = re.search(r"\d{1,3}(?:[ .]\d{3})+|\d{3,6}", tmp)
+    m = NUMBER_RE.search(tmp)
     if not m:
         return ""
     num = m.group(0).replace(".", " ")
     num = re.sub(r"\s+", " ", num).strip()
-    if re.fullmatch(r"0+", num.replace(" ", "")):
+    if ZERO_ONLY_RE.fullmatch(num.replace(" ", "")):
         return ""
     return num
 
@@ -196,23 +234,8 @@ def _extract_key_values(section: str) -> dict:
     """
     lines = [ln.strip() for ln in section.splitlines() if ln.strip()]
     out = {}
-
     # Direct same-line patterns (keeps original characters)
-    label_patterns = [
-        (r"Kjennemerke", "registration"),
-        (r"Registreringsnummer", "registration"),
-        (r"Fabrikat/årsmodell/Type", "make_model_year"),
-        (r"Fabrikat/årsmodell", "make_model_year"),
-        (r"Type", "type"),
-        (r"Forsikringssum\s*kr", "sum_insured"),
-        (r"Forsikringssum", "sum_insured"),
-        (r"Dekning", "coverage"),
-        (r"Egenandel", "deductible"),
-        (r"Pris", "premium"),
-        (r"Årlig kjørelengde", "annual_mileage"),
-        (r"Bonus", "bonus"),
-        (r"Leasing", "leasing"),
-    ]
+    label_patterns = LINE_LABEL_PATTERNS
 
     for line in lines:
         for pattern, key in label_patterns:
@@ -227,25 +250,11 @@ def _extract_key_values(section: str) -> dict:
                     if key == "coverage" and not _is_valid_coverage(val):
                         continue
                     # Avoid header line being treated as a value
-                    if key == "coverage" and re.search(r"vilkår|vilkÃ¥r|vilkar|forsikringssum|egenandel|pris", val, re.IGNORECASE):
+                    if key == "coverage" and INVALID_COVERAGE_VALUE_RE.search(val):
                         continue
                     out[key] = val
 
-    key_map = {
-        "kjennemerke": "registration",
-        "registreringsnummer": "registration",
-        "fabrikatarsmodell": "make_model_year",
-        "fabrikatarsmodelltype": "make_model_year",
-        "type": "type",
-        "forsikringssumkr": "sum_insured",
-        "forsikringssum": "sum_insured",
-        "dekning": "coverage",
-        "egenandel": "deductible",
-        "pris": "premium",
-        "arligkjorelengde": "annual_mileage",
-        "bonus": "bonus",
-        "leasing": "leasing",
-    }
+    key_map = KEY_MAP
 
     for i, line in enumerate(lines):
         # Inline "Key: Value"
@@ -262,7 +271,7 @@ def _extract_key_values(section: str) -> dict:
                             continue
                     if mapped == "coverage" and not _is_valid_coverage(val):
                         continue
-                    if mapped == "coverage" and re.search(r"vilkår|vilkÃ¥r|vilkar|forsikringssum|egenandel|pris", val, re.IGNORECASE):
+                    if mapped == "coverage" and INVALID_COVERAGE_VALUE_RE.search(val):
                         continue
                     out[mapped] = val
                 continue
@@ -280,7 +289,7 @@ def _extract_key_values(section: str) -> dict:
                             continue
                     if mapped == "coverage" and not _is_valid_coverage(val):
                         continue
-                    if mapped == "coverage" and re.search(r"vilkår|vilkÃ¥r|vilkar|forsikringssum|egenandel|pris", val, re.IGNORECASE):
+                    if mapped == "coverage" and INVALID_COVERAGE_VALUE_RE.search(val):
                         continue
                     out[mapped] = val
 
@@ -300,13 +309,8 @@ def _extract_specification_format(pdf_text: str, seen: set) -> list:
       Dekning / Vilkår / Forsikringssum / Egenandel / Pris (table)
     """
     vehicles = []
-
     # Headers that usually denote a vehicle-specific section
-    header_re = re.compile(
-        r"(?P<header>(?:Motorvogn|Personbil|Varebil|Lastebil|Campingvogn og tilhenger|Tilhenger|Traktor|Moped|Motorsykkel|Snøscooter|Båt)[^\n]*?)\s*-\s*Vilkår\s+[A-Z]{2,4}\d+",
-        re.IGNORECASE
-    )
-    matches = list(re.finditer(header_re, pdf_text))
+    matches = list(SPEC_HEADER_RE.finditer(pdf_text))
 
     for idx, m in enumerate(matches):
         start = m.start()
@@ -315,7 +319,7 @@ def _extract_specification_format(pdf_text: str, seen: set) -> list:
 
         # Trim at common section boundaries to avoid leaking numbers from other parts
         tail = section[200:]
-        end_mark = re.search(r"(Forsikringsbevis\s*\|\s*Spesifikasjon|Avtalenummer|Side\s+\d+\s+av\s+\d+)", tail, re.IGNORECASE)
+        end_mark = SPEC_END_RE.search(tail)
         if end_mark:
             section = section[:200 + end_mark.start()]
 

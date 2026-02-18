@@ -13,6 +13,7 @@ Supports two observed Ly formats:
 from __future__ import annotations
 
 import re
+import streamlit as st
 
 
 TABLE_ROW_RE = re.compile(
@@ -20,23 +21,35 @@ TABLE_ROW_RE = re.compile(
     r"\d{2}\.\d{2}\.\d{4}(?:\s+\d{2}\.\d{2}\.\d{4})?\s+"
     r"([0-9][0-9\s\.,]{0,15})\s+([0-9][0-9\s\.,]{0,15})$"
 )
+LY_MARKERS = (
+    "ly forsikring",
+    "firmabil flate",
+    "tilhenger flate",
+    "registreringsnummer ureg",
+)
+UREG_ANCHOR_RE = re.compile(r"Registreringsnummer\s+UREG", re.IGNORECASE)
+SELECTED_LEASING_BLOCK_RE = re.compile(
+    r"Kundevalgte\s+tilleggsdekninger\s+som\s+er\s+valgt",
+    re.IGNORECASE,
+)
+LEASING_M01_RE = re.compile(r"\bM01\s+Leasingavtale\b", re.IGNORECASE)
+STOP_MARKER_PATTERNS = (
+    r"Kundevalgte\s+tilleggsdekninger\s+som\s+ikke\s+er\s+valgt",
+    r"Kj\S*\s+som\s+inng\S*\s+i\s+gruppen",
+    r"Tilhengere\s+som\s+inng\S*\s+i\s+gruppen",
+    r"Registreringsnummer\s+UREG",
+    r"Side\s+\d+",
+)
+STOP_MARKER_RES = tuple(re.compile(pattern, re.IGNORECASE) for pattern in STOP_MARKER_PATTERNS)
 
 
 def extract_ly_vehicles(pdf_text: str) -> list:
     """Extract vehicles from Ly Forsikring PDF text."""
-    import streamlit as st
-
     if not pdf_text:
         return []
 
     normalized_all = _normalize_text(pdf_text)
-    ly_markers = (
-        "ly forsikring",
-        "firmabil flate",
-        "tilhenger flate",
-        "registreringsnummer ureg",
-    )
-    if not any(marker in normalized_all for marker in ly_markers):
+    if not any(marker in normalized_all for marker in LY_MARKERS):
         return []
 
     st.write("    DEBUG: Ly pattern matching...")
@@ -138,7 +151,7 @@ def _extract_group_table_vehicles(pdf_text: str, defaults: dict, seen_keys: set[
 def _extract_unregistered_machines(pdf_text: str, seen_keys: set[str]) -> list:
     vehicles: list[dict] = []
 
-    for anchor in re.finditer(r"Registreringsnummer\s+UREG", pdf_text, re.IGNORECASE):
+    for anchor in UREG_ANCHOR_RE.finditer(pdf_text):
         section = _slice_context(pdf_text, anchor.start(), before=120, after=2200)
 
         model = _extract_line_value(section, r"Merke\s*/\s*modell\s*([^\n\r]*)")
@@ -194,30 +207,19 @@ def _extract_selected_leasing(section: str) -> str:
 
     # Only inspect the explicit "som er valgt" block to avoid false positives
     # from the later "som ikke er valgt" block.
-    selected = re.search(
-        r"Kundevalgte\s+tilleggsdekninger\s+som\s+er\s+valgt",
-        section,
-        re.IGNORECASE,
-    )
+    selected = SELECTED_LEASING_BLOCK_RE.search(section)
     if not selected:
         return ""
 
     tail = section[selected.end() :]
-    stop_markers = [
-        r"Kundevalgte\s+tilleggsdekninger\s+som\s+ikke\s+er\s+valgt",
-        r"Kj\S*\s+som\s+inng\S*\s+i\s+gruppen",
-        r"Tilhengere\s+som\s+inng\S*\s+i\s+gruppen",
-        r"Registreringsnummer\s+UREG",
-        r"Side\s+\d+",
-    ]
     end = len(tail)
-    for marker in stop_markers:
-        m = re.search(marker, tail, re.IGNORECASE)
+    for marker_re in STOP_MARKER_RES:
+        m = marker_re.search(tail)
         if m:
             end = min(end, m.start())
 
     selected_block = tail[:end]
-    return "Leasingavtale" if re.search(r"\bM01\s+Leasingavtale\b", selected_block, re.IGNORECASE) else ""
+    return "Leasingavtale" if LEASING_M01_RE.search(selected_block) else ""
 
 
 def _extract_amount(text: str, pattern: str) -> str:

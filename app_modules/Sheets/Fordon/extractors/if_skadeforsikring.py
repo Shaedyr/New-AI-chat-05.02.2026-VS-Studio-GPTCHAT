@@ -11,22 +11,40 @@ Strategy:
 from __future__ import annotations
 
 import re
+import streamlit as st
 
 
 VEHICLE_TYPE_PATTERN = r"(Varebil|Personbil|Lastebil|Moped|Traktor|BÃ¥t|Båt|Tilhenger)"
+ANCHOR_RE = re.compile(r"Registreringsnummer:\s*([A-Z]{2}\d{5})")
+DEDUCTIBLE_RE = re.compile(
+    r"Egenandel\s*-\s*Skader p\S* eget kj\S*ret\S*y:\s*([\d\s]+?)\s*kr",
+    flags=re.IGNORECASE,
+)
+SUM_INSURED_RE = re.compile(
+    r"Forsikringssum[^0-9]{0,40}([\d\s]{4,})\s*kr",
+    flags=re.IGNORECASE,
+)
+LEASING_MARK_RE = re.compile(r"Tredjemannsinteresse/leasing", re.IGNORECASE)
+KNOWN_LEASING_COMPANIES = (
+    "Sparebank 1",
+    "Nordea Finans",
+    "Santander",
+    "DNB Finans",
+    "BRAGE FINANS",
+    "Handelsbanken",
+    "BN Bank",
+)
 
 
 def extract_if_vehicles(pdf_text: str) -> list:
     """Extract vehicles from IF PDFs."""
-    import streamlit as st
 
     vehicles = []
     seen = set()
 
     st.write("    ðŸ” **DEBUG: If pattern matching...**")
 
-    anchor_re = r"Registreringsnummer:\s*([A-Z]{2}\d{5})"
-    anchors = list(re.finditer(anchor_re, pdf_text))
+    anchors = list(ANCHOR_RE.finditer(pdf_text))
     st.write(f"    - Registreringsnummer anchors found: {len(anchors)}")
 
     for idx, anchor in enumerate(anchors):
@@ -109,7 +127,7 @@ def _extract_mileage(text: str) -> str:
 
 
 def _extract_deductible(text: str) -> str:
-    m = re.search(r"Egenandel\s*-\s*Skader p\S* eget kj\S*ret\S*y:\s*([\d\s]+?)\s*kr", text, flags=re.IGNORECASE)
+    m = DEDUCTIBLE_RE.search(text)
     return m.group(1).strip() if m else ""
 
 
@@ -123,23 +141,14 @@ def _extract_premium(text: str, reg: str) -> str:
 
 
 def _extract_sum_insured(text: str) -> str:
-    m = re.search(r"Forsikringssum[^0-9]{0,40}([\d\s]{4,})\s*kr", text, flags=re.IGNORECASE)
+    m = SUM_INSURED_RE.search(text)
     return m.group(1).strip() if m else ""
 
 
 def _extract_leasing(text: str) -> str:
-    known = [
-        "Sparebank 1",
-        "Nordea Finans",
-        "Santander",
-        "DNB Finans",
-        "BRAGE FINANS",
-        "Handelsbanken",
-        "BN Bank",
-    ]
-    for company in known:
+    for company in KNOWN_LEASING_COMPANIES:
         if company in text:
             return company
-    if re.search(r"Tredjemannsinteresse/leasing", text, re.IGNORECASE):
+    if LEASING_MARK_RE.search(text):
         return "Leasing (ukjent selskap/tredjepartsleasing)"
     return ""

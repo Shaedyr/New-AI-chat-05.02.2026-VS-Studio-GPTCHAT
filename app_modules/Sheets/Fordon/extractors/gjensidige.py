@@ -28,6 +28,29 @@ MACHINE_BRANDS = [
     "New Holland",
     "Kubota",
 ]
+REG_TOKEN = r"[A-Z]{2}\s*\d(?:\s?\d){3,4}"
+REG_WITH_SPACES_RE = re.compile(rf"\b({REG_TOKEN})\b", re.IGNORECASE)
+LABEL_RE = re.compile(r"\b(kjennemerke|reg\.?\s*nr|regnr|registreringsnummer)\b", re.IGNORECASE)
+YEAR_20XX_RE = re.compile(r"\b(20\d{2})\b")
+NUMBER_TOKEN_RE = re.compile(r"\b([0-9]{1,3}(?:[\s\.,][0-9]{3})+|[0-9]{5,6})\b")
+MASKINLOSORE_RE = re.compile(
+    r"maskinl(?:\u00f8|o|0|@|\?|\u00c3\u00b8)s(?:\u00f8|o|0|@|\?|\u00c3\u00b8)re",
+    re.IGNORECASE,
+)
+OCR_TEXT_REPLACEMENTS = {
+    "\u00c3\u00b8": "o",
+    "\u00c3\u0098": "o",
+    "\u00c3\u00a5": "a",
+    "\u00c3\u0085": "a",
+    "\u00c3\u00a6": "ae",
+    "\u00c3\u0086": "ae",
+    "\u00f8": "o",
+    "\u00d8": "o",
+    "\u00e5": "a",
+    "\u00c5": "a",
+    "\u00e6": "ae",
+    "\u00c6": "ae",
+}
 
 
 def extract_gjensidige_vehicles(pdf_text: str) -> list:
@@ -84,8 +107,7 @@ def _extract_registered_cars(pdf_text: str, seen: set[str]) -> list:
     ]
 
     brands_pattern = "|".join(brands)
-    reg_token = r"[A-Z]{2}\s*\d(?:\s?\d){3,4}"
-    pattern1 = rf"({brands_pattern})\s+([A-Za-z0-9\s\-().]+?)\s+(20\d{{2}})\s+({reg_token})"
+    pattern1 = rf"({brands_pattern})\s+([A-Za-z0-9\s\-().]+?)\s+(20\d{{2}})\s+({REG_TOKEN})"
 
     for match in re.finditer(pattern1, pdf_text, re.IGNORECASE):
         make = match.group(1).strip()
@@ -116,21 +138,14 @@ def _extract_registered_cars(pdf_text: str, seen: set[str]) -> list:
             }
         )
 
-    all_regs = re.findall(r"\b([A-Z]{2}\s*\d(?:\s?\d){3,4})\b", pdf_text, re.IGNORECASE)
-    label_re = re.compile(r"\b(kjennemerke|reg\.?\s*nr|regnr|registreringsnummer)\b", re.IGNORECASE)
-
-    for reg_raw in all_regs:
+    for reg_match in REG_WITH_SPACES_RE.finditer(pdf_text):
+        reg_raw = reg_match.group(1)
         reg = reg_raw.replace(" ", "")
 
         digits = re.sub(r"\D", "", reg)
         if len(digits) == 4 and digits.startswith(("19", "20")):
             continue
         if reg in seen:
-            continue
-
-        reg_pattern = re.sub(r"\s+", r"\\s?", reg_raw)
-        reg_match = re.search(rf"{reg_pattern}", pdf_text, re.IGNORECASE)
-        if not reg_match:
             continue
 
         pos = reg_match.start()
@@ -156,11 +171,11 @@ def _extract_registered_cars(pdf_text: str, seen: set[str]) -> list:
                 found_model = re.sub(r"\s+(Reg\.\w+|TFA|\w*rspremie).*$", "", found_model).strip()
             break
 
-        year_match = re.search(r"\b(20\d{2})\b", window)
+        year_match = YEAR_20XX_RE.search(window)
         if year_match:
             found_year = year_match.group(1)
 
-        label_hit = bool(label_re.search(context_window))
+        label_hit = bool(LABEL_RE.search(context_window))
         if not (found_brand or label_hit):
             continue
 
@@ -200,14 +215,9 @@ def _extract_unregistered_tractors(pdf_text: str) -> list:
 
     st.write("    DEBUG: Tractors...")
 
-    found_brands = [b for b in MACHINE_BRANDS if b.lower() in pdf_text.lower()]
-    has_maskinlosore = bool(
-        re.search(
-            r"maskinl(?:\u00f8|o|0|@|\?|\u00c3\u00b8)s(?:\u00f8|o|0|@|\?|\u00c3\u00b8)re",
-            pdf_text,
-            re.IGNORECASE,
-        )
-    )
+    text_lower = pdf_text.lower()
+    found_brands = [b for b in MACHINE_BRANDS if b.lower() in text_lower]
+    has_maskinlosore = bool(MASKINLOSORE_RE.search(pdf_text))
     st.write(
         f"    - Brands: {', '.join(found_brands) if found_brands else 'NONE'}"
         f" | maskinlosore: {has_maskinlosore}"
@@ -252,8 +262,7 @@ def _extract_unregistered_tractors(pdf_text: str) -> list:
         )
         st.write(f"      - Traktor: {label}")
 
-    maskin_re = r"maskinl(?:\u00f8|o|0|@|\?|\u00c3\u00b8)s(?:\u00f8|o|0|@|\?|\u00c3\u00b8)re"
-    maskin_matches = list(re.finditer(maskin_re, pdf_text, re.IGNORECASE))
+    maskin_matches = list(MASKINLOSORE_RE.finditer(pdf_text))
     st.write(f"    - MASKINLOSORE regex matches: {len(maskin_matches)}")
 
     for match in maskin_matches:
@@ -387,7 +396,7 @@ def _extract_premium_after_position(text: str, start_pos: int) -> str:
     if not text:
         return ""
     tail = text[start_pos : min(len(text), start_pos + 100)]
-    match = re.search(r"\b([0-9]{1,3}(?:[\s\.,][0-9]{3})+|[0-9]{5,6})\b", tail)
+    match = NUMBER_TOKEN_RE.search(tail)
     if not match:
         return ""
     value = _normalize_digits(match.group(1))
@@ -407,7 +416,7 @@ def _extract_premium_from_window(text: str) -> str:
     if not text:
         return ""
     candidates = []
-    for hit in re.findall(r"\b([0-9]{1,3}(?:[\s\.,][0-9]{3})+|[0-9]{5,6})\b", text):
+    for hit in NUMBER_TOKEN_RE.findall(text):
         value = _normalize_digits(hit)
         if not value:
             continue
@@ -423,21 +432,7 @@ def _normalize_ocr_text(text: str) -> str:
         return ""
 
     normalized = text
-    replacements = {
-        "\u00c3\u00b8": "o",
-        "\u00c3\u0098": "o",
-        "\u00c3\u00a5": "a",
-        "\u00c3\u0085": "a",
-        "\u00c3\u00a6": "ae",
-        "\u00c3\u0086": "ae",
-        "\u00f8": "o",
-        "\u00d8": "o",
-        "\u00e5": "a",
-        "\u00c5": "a",
-        "\u00e6": "ae",
-        "\u00c6": "ae",
-    }
-    for src, dst in replacements.items():
+    for src, dst in OCR_TEXT_REPLACEMENTS.items():
         normalized = normalized.replace(src, dst)
 
     normalized = re.sub(r"\s+", " ", normalized)
