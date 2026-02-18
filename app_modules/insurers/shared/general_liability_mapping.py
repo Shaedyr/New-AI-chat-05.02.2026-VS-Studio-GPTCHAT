@@ -216,39 +216,66 @@ def _extract_gjensidige_entry(pdf_text: str, normalized: str) -> dict:
 
 def _extract_tryg_entry(pdf_text: str, normalized: str) -> dict:
     entry = dict(DEFAULT_ENTRY)
+    number = r"(?:\d{1,3}(?:\s\d{3})+|\d{4,})"
 
-    start = normalized.find("alminnelig ansvarsforsikring")
-    section = pdf_text[start : start + 8000] if start >= 0 else pdf_text[:12000]
+    # Target the specification block, not the "Nyheter og endringer" pages.
+    spec_match = re.search(
+        r"Alminnelig\s+ansvarsforsikring\s*-\s*Vilk[åa]r\s+[A-Z0-9]+",
+        pdf_text,
+        re.IGNORECASE,
+    )
+    if spec_match:
+        start = spec_match.start()
+        next_spec = re.search(
+            r"Forsikringsbevis\s*\|\s*Spesifikasjon",
+            pdf_text[start + 100 :],
+            re.IGNORECASE,
+        )
+        if next_spec:
+            end = start + 100 + next_spec.start()
+            section = pdf_text[start:end]
+        else:
+            section = pdf_text[start : start + 12000]
+    else:
+        # Fallback: first liability mention
+        start = pdf_text.lower().find("alminnelig ansvarsforsikring")
+        section = pdf_text[start : start + 12000] if start >= 0 else pdf_text[:12000]
 
-    virksomhet_match = _first_match([r"virksomhet\s*[:\-]?\s*([^\r\n]+)"], section)
+    virksomhet_match = _first_match([r"Virksomhet\s+([^\r\n]+)"], section)
     if virksomhet_match:
         raw_value = _clean_label(virksomhet_match.group(1))
-        if raw_value.lower() not in {"virksomhet", "dekning", "vilkar", "vilkar"}:
+        if raw_value.lower() not in {"virksomhet", "dekning", "vilkar", "vilkår"}:
             entry["virksomhet"] = raw_value
 
-    omsetning_match = _first_match([r"driftsinntekter\s*kr\s*([0-9][0-9\s.,]{3,})"], normalized)
+    omsetning_match = _first_match([r"Driftsinntekter\s*kr\s*([0-9][0-9\s.,]{3,})"], section)
+    if not omsetning_match:
+        omsetning_match = _first_match([r"driftsinntekter\s*kr\s*([0-9][0-9\s.,]{3,})"], normalized)
     if omsetning_match:
         entry["annual_turnover_2024"] = omsetning_match.group(1)
 
     bedrift_row = _first_match(
         [
-            r"ansvar\s+for\s+virksomheten\s*\*?\s+([0-9][0-9\s.,]{3,})\s+([0-9][0-9\s.,]{3,})\s+([0-9][0-9\s.,]{3,})",
+            rf"Ansvar\s+for\s+virksomheten\s*\*?\)?\s+({number})\s+({number})\s+({number})",
         ],
         section,
     )
     if bedrift_row:
         entry["bedriftsansvar"] = bedrift_row.group(1)
         entry["egenandel_ansvar"] = bedrift_row.group(2)
+        # Prefer explicit "Pris ..." line later, but use row price as fallback.
         entry["tilbud_pris"] = bedrift_row.group(3)
 
-    rettshjelp_row = _first_match([r"rettshjelp(?:\s+[a-z0-9]{4,})?\s+([0-9][0-9\s.,]{3,})"], section)
+    rettshjelp_row = _first_match(
+        [rf"Rettshjelp(?:\s+[A-Z0-9]+)?\s+({number})(?:\s+({number}))?"],
+        section,
+    )
     if rettshjelp_row:
         entry["rettshjelp_sum"] = rettshjelp_row.group(1)
 
-    if not entry["tilbud_pris"]:
-        prices = re.findall(r"\bpris\s+([0-9][0-9\s.,]{3,})\b", section, re.IGNORECASE)
-        if prices:
-            entry["tilbud_pris"] = prices[-1]
+    # Explicit total section price (e.g. "Pris 47 370")
+    price_line = _first_match([rf"\bPris\s+({number})\b"], section)
+    if price_line:
+        entry["tilbud_pris"] = price_line.group(1)
 
     return entry
 
