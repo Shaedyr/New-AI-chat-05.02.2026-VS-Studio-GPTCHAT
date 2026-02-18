@@ -200,14 +200,27 @@ def _extract_if_entry(pdf_text: str, normalized: str) -> dict:
 def _extract_gjensidige_entry(pdf_text: str, normalized: str) -> dict:
     entry = dict(DEFAULT_ENTRY)
 
-    split_index = normalized.find("forsikringsbevis")
-    head = normalized[:split_index] if split_index > 0 else normalized[:9000]
+    # OCR text often contains "forsikringsbevis" in the TOC very early.
+    # Use the initial overview block directly.
+    overview = normalized[:20000]
 
-    price_match = _first_match([r"ansvarsforsikring\s+([0-9][0-9\s.,]{3,})"], head)
+    price_match = _first_match(
+        [
+            r"ansvarsforsikring\s+([0-9][0-9\s.,]{2,})",
+            r"ansvarsforsikring[^0-9]{0,20}([0-9][0-9\s.,]{2,})",
+        ],
+        overview,
+    )
     if price_match:
         entry["tilbud_pris"] = price_match.group(1)
 
-    omsetning_match = _first_match([r"sist\s+kjente\s+omsetning\s+([0-9][0-9\s.,]{3,})"], head)
+    omsetning_match = _first_match(
+        [
+            r"sist\s+kjente\s+omsetning\s+([0-9][0-9\s.,]{3,})",
+            r"driftsinntekter\s*kr\s*([0-9][0-9\s.,]{3,})",
+        ],
+        overview,
+    )
     if omsetning_match:
         entry["annual_turnover_2024"] = omsetning_match.group(1)
 
