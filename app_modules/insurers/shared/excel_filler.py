@@ -123,9 +123,20 @@ def fill_excel(template_bytes, field_values, summary_text):
                             cell.number_format = str(number_format)
 
                         align_horizontal = style_cfg.get("align_horizontal")
-                        if align_horizontal:
+                        align_vertical = style_cfg.get("align_vertical")
+                        wrap_text = style_cfg.get("wrap_text")
+                        if (
+                            align_horizontal
+                            or align_vertical
+                            or wrap_text is not None
+                        ):
                             new_alignment = copy(cell.alignment)
-                            new_alignment.horizontal = str(align_horizontal)
+                            if align_horizontal:
+                                new_alignment.horizontal = str(align_horizontal)
+                            if align_vertical:
+                                new_alignment.vertical = str(align_vertical)
+                            if wrap_text is not None:
+                                new_alignment.wrap_text = bool(wrap_text)
                             cell.alignment = new_alignment
 
                         st.write(f"    ✓ Filled {cell_ref}: {str(value)[:50]}")

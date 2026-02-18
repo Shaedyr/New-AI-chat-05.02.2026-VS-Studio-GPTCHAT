@@ -305,12 +305,12 @@ def _detect_provider(pdf_text: str) -> str:
     normalized = _normalize_text(pdf_text)
     if "ly forsikring" in normalized:
         return "ly"
-    if "gjensidige" in normalized:
-        return "gjensidige"
-    if "tryg" in normalized:
-        return "tryg"
-    if "if skadeforsikring" in normalized or re.search(r"\bif\b", normalized):
+    if "if skadeforsikring" in normalized or "if forsikrer" in normalized or "if.no" in normalized:
         return "if"
+    if "gjensidige forsikring" in normalized or re.search(r"\bgjensidige\b", normalized):
+        return "gjensidige"
+    if "tryg forsikring" in normalized or "tryg.no" in normalized or re.search(r"\btryg\b", normalized):
+        return "tryg"
     return ""
 
 
@@ -350,6 +350,7 @@ def transform_data(extracted: dict) -> dict:
         return {}
 
     out: dict[str, object] = {}
+    cell_styles: dict[str, dict[str, object]] = {}
 
     for field, column in FIELD_COLUMNS.items():
         value = entry.get(field, "")
@@ -362,5 +363,17 @@ def transform_data(extracted: dict) -> dict:
             value = (value or "").strip()
 
         out[f"{column}{ROW_START}"] = value
+
+    # Keep text in merged template cells readable: wrap within cell and align top-left.
+    for ref in ("A3", "H3"):
+        if ref in out:
+            cell_styles[ref] = {
+                "align_horizontal": "left",
+                "align_vertical": "top",
+                "wrap_text": True,
+            }
+
+    if cell_styles:
+        out["_cell_styles"] = cell_styles
 
     return out
