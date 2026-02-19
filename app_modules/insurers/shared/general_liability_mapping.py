@@ -278,6 +278,26 @@ def _extract_tryg_entry(pdf_text: str, normalized: str) -> dict:
         # Prefer explicit "Pris ..." line later, but use row price as fallback.
         entry["tilbud_pris"] = bedrift_row.group(3)
 
+    # Tryg special case: when NS clause exists ("forsikringssummen 150G"),
+    # that value should take priority for Bedriftsansvar (C3).
+    ns_sum_match = _first_match(
+        [
+            r"for\s+oppdrag\s+i\s+henhold\s+til\s+norsk\s+standard\s*\(ns\)\s+er\s+forsikringssummen\s+(\d+)\s*g",
+            r"for\s+oppdrag\s+i\s+henhold\s+til\s+norsk\s+standard[^0-9]{0,40}(\d+)\s*g",
+        ],
+        section,
+    )
+    if not ns_sum_match:
+        ns_sum_match = _first_match(
+            [
+                r"for\s+oppdrag\s+i\s+henhold\s+til\s+norsk\s+standard\s*\(ns\)\s+er\s+forsikringssummen\s+(\d+)\s*g",
+                r"for\s+oppdrag\s+i\s+henhold\s+til\s+norsk\s+standard[^0-9]{0,40}(\d+)\s*g",
+            ],
+            normalized,
+        )
+    if ns_sum_match:
+        entry["bedriftsansvar"] = f"{ns_sum_match.group(1)} G"
+
     rettshjelp_row = _first_match(
         [rf"Rettshjelp(?:\s+[A-Z0-9]+)?\s+({number})(?:\s+({number}))?"],
         section,
