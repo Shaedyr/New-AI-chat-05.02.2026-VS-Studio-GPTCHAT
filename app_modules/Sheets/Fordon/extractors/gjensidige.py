@@ -53,8 +53,30 @@ OCR_TEXT_REPLACEMENTS = {
 }
 
 
+def _looks_like_gjensidige_pdf(pdf_text: str) -> bool:
+    """
+    Guard against cross-format false positives.
+    Gjensidige extractor should only run on Gjensidige documents.
+    """
+    text = (pdf_text or "").lower()
+    if "gjensidige" not in text:
+        return False
+
+    strong_markers = (
+        "gjensidige forsikring asa",
+        "forsikringsnummer",
+        "forsikringsoversikt",
+        "næringsbil minigruppe",
+        "ureg. arbeidsmaskin",
+    )
+    return any(marker in text for marker in strong_markers)
+
+
 def extract_gjensidige_vehicles(pdf_text: str) -> list:
     """Extract vehicles from a Gjensidige PDF text dump."""
+    if not _looks_like_gjensidige_pdf(pdf_text):
+        return []
+
     vehicles: list[dict] = []
     seen_registrations: set[str] = set()
 
