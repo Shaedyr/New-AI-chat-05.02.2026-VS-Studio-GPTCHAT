@@ -1,6 +1,7 @@
 ﻿import streamlit as st
 from contextlib import contextmanager
 
+from app_modules.app_mode import is_production_mode
 from app_modules.template_loader import load_template
 from app_modules.company_data import (
     fetch_company_by_org,
@@ -23,11 +24,15 @@ def _extract_fields_from_pdf_cached(pdf_bytes: bytes, provider_hint: str) -> dic
 
 
 @contextmanager
-def _suppress_streamlit_messages():
+def _suppress_streamlit_messages(enabled: bool = True):
     """
     Hide noisy debug output from lower-level modules while processing.
     This keeps the UI clean in production mode.
     """
+    if not enabled:
+        yield
+        return
+
     funcs = ("write", "info", "warning", "success", "error", "code")
     originals = {name: getattr(st, name) for name in funcs if hasattr(st, name)}
     try:
@@ -54,7 +59,7 @@ def _collect_pdf_fields(pdf_uploads, provider_hint: str, progress=None, start_pc
             progress.progress(pct, text=f"Reading PDF {idx}/{total}...")
 
         pdf_bytes = uploaded_pdf.getvalue()
-        with _suppress_streamlit_messages():
+        with _suppress_streamlit_messages(enabled=is_production_mode()):
             extracted_fields = _extract_fields_from_pdf_cached(pdf_bytes, provider_hint)
 
         if not extracted_fields:
@@ -298,7 +303,7 @@ def run():
             merged_fields["vehicle_provider"] = vehicle_provider
 
             progress.progress(70, text="Generating Excel file...")
-            with _suppress_streamlit_messages():
+            with _suppress_streamlit_messages(enabled=is_production_mode()):
                 excel_bytes = fill_excel(
                     template_bytes=template_bytes,
                     field_values=merged_fields,
@@ -314,4 +319,7 @@ def run():
             progress.progress(100, text="Done")
         except Exception as e:
             progress.empty()
-            st.error(f"Processing failed: {e}")
+            if is_production_mode():
+                st.error("Processing failed. Check logs for details.")
+            else:
+                st.error(f"Processing failed: {e}")
