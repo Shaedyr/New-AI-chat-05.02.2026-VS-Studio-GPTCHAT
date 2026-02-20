@@ -1,5 +1,9 @@
 ﻿import streamlit as st
 from contextlib import contextmanager
+from datetime import datetime
+import json
+from io import BytesIO
+import zipfile
 
 from app_modules.app_mode import is_production_mode
 from app_modules.template_loader import load_template
@@ -79,6 +83,55 @@ def _collect_pdf_fields(pdf_uploads, provider_hint: str, progress=None, start_pc
         pdf_fields["pdf_text"] = "\n\n".join(combined_pdf_text_parts)
 
     return pdf_fields
+
+
+def _trim_large_strings(value, max_chars: int = 15000):
+    """Trim large strings for support bundle payloads."""
+    if isinstance(value, str):
+        if len(value) <= max_chars:
+            return value
+        return f"{value[:max_chars]} ... [trimmed {len(value) - max_chars} chars]"
+    if isinstance(value, dict):
+        return {k: _trim_large_strings(v, max_chars=max_chars) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_trim_large_strings(v, max_chars=max_chars) for v in value]
+    return value
+
+
+def _build_support_bundle(company_name: str, vehicle_provider: str, merged_fields: dict, fill_report: dict) -> bytes:
+    """
+    Build a zip bundle for troubleshooting without exposing secrets.
+    Includes report + trimmed merged data + basic notes.
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    mode = "production" if is_production_mode() else "development"
+
+    trimmed_fields = _trim_large_strings(dict(merged_fields))
+    support_report = {
+        "generated_at": timestamp,
+        "mode": mode,
+        "insurance_type": vehicle_provider,
+        "company_name": company_name,
+        "fill_report": fill_report,
+    }
+
+    notes = [
+        f"Generated: {timestamp}",
+        f"Mode: {mode}",
+        f"Insurance type: {vehicle_provider}",
+        f"Company: {company_name}",
+        "",
+        "This bundle excludes secrets and API keys.",
+    ]
+
+    out = BytesIO()
+    with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("support_report.json", json.dumps(support_report, indent=2, ensure_ascii=False))
+        zf.writestr("merged_fields.json", json.dumps(trimmed_fields, indent=2, ensure_ascii=False))
+        zf.writestr("notes.txt", "\n".join(notes))
+
+    out.seek(0)
+    return out.getvalue()
 
 
 def run():
@@ -304,16 +357,46 @@ def run():
 
             progress.progress(70, text="Generating Excel file...")
             with _suppress_streamlit_messages(enabled=is_production_mode()):
-                excel_bytes = fill_excel(
+                excel_bytes, fill_report = fill_excel(
                     template_bytes=template_bytes,
                     field_values=merged_fields,
                     summary_text=summary_text,
+                    return_report=True,
                 )
 
-            progress.progress(95, text="Finalizing...")
+            failed_sheets = [
+                s for s in fill_report.get("sheets", [])
+                if s.get("status") == "failed"
+            ]
+            if failed_sheets:
+                failed_names = ", ".join(s.get("sheet", "?") for s in failed_sheets)
+                st.warning(f"Export completed with partial issues in: {failed_names}")
+
+            progress.progress(90, text="Preparing downloads...")
             download_excel_file(
                 excel_bytes=excel_bytes,
                 company_name=merged_fields.get("company_name", "Company"),
+            )
+
+            support_bytes = _build_support_bundle(
+                company_name=merged_fields.get("company_name", "Company"),
+                vehicle_provider=vehicle_provider,
+                merged_fields=merged_fields,
+                fill_report=fill_report,
+            )
+
+            safe_name = "".join(
+                c for c in merged_fields.get("company_name", "Company")
+                if c.isalnum() or c in " _-"
+            ).strip() or "Company"
+            stamp = datetime.now().strftime("%Y%m%d_%H%M")
+            support_filename = f"{safe_name}_{stamp}_support.zip"
+
+            st.download_button(
+                label="Download support bundle (.zip)",
+                data=support_bytes,
+                file_name=support_filename,
+                mime="application/zip",
             )
 
             progress.progress(100, text="Done")
