@@ -260,7 +260,7 @@ def run():
     with col_provider:
         vehicle_provider = st.selectbox(
             "Insurance type",
-            ["Auto-detect", "Tryg", "Gjensidige", "If", "Ly"],
+            ["Select insurance type", "Tryg", "Gjensidige", "If", "Ly"],
             index=0,
             help="Select insurer format for vehicle extraction",
         )
@@ -274,6 +274,10 @@ def run():
     # STEP 7: PROCESS & DOWNLOAD
     # ---------------------------------------------------------
     if st.button("Process & Update Excel", use_container_width=True):
+        if vehicle_provider == "Select insurance type":
+            st.warning("Select insurance type before processing.")
+            return
+
         progress = st.progress(0, text="Starting process...")
         try:
             progress.progress(10, text="Preparing inputs...")
