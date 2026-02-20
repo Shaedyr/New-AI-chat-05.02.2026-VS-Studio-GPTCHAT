@@ -62,7 +62,7 @@ DEADLINE_RE = re.compile(
 # PDF TEXT EXTRACTION
 # ---------------------------------------------------------
 
-def extract_text_from_pdf(pdf_bytes: bytes) -> str:
+def extract_text_from_pdf(pdf_bytes: bytes, provider_hint: str | None = None) -> str:
     """
     Extracts text from PDF pages.
     Reads up to MAX_PAGES_TO_READ pages (default: 50).
@@ -78,6 +78,9 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
         return ""
 
     st.write(f"📄 **Extracting text from PDF** ({len(pdf_bytes)} bytes)")
+
+    provider = (provider_hint or "").strip().lower()
+    force_gjensidige_300_full = provider in ("gjensidige", "gjensidige forsikring")
 
     try:
         text_parts = []
@@ -119,41 +122,55 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
             st.error("❌ No text extracted!")
             st.warning("PDF might be image-based, encrypted, or corrupted")
         
-        # OCR fallback if text is too short (likely scanned PDF)
+                # Auto-detect override: if document looks like Gjensidige, use direct 300 DPI OCR path.
+        if (not force_gjensidige_300_full) and provider in ("", "auto-detect"):
+            if re.search(r"gjensidige", text, re.IGNORECASE):
+                force_gjensidige_300_full = True
+
+# OCR fallback if text is too short (likely scanned PDF)
         # OR if text contains vehicle-related keywords but no registrations
         if len(text) < OCR_MIN_TEXT_LENGTH or _needs_ocr_without_regs(text):
-            st.warning("⚠️ Attempting OCR fallback...")
-            ocr_text = _ocr_text_from_pdf(pdf_bytes, max_pages=OCR_MAX_PAGES, start_page=0, resolution=200)
-            if ocr_text:
-                text = (text + "\n" + ocr_text).strip()
-                st.success(f"✅ OCR added {len(ocr_text)} characters")
-            else:
-                st.warning("⚠️ OCR produced no text")
-
-            # If the OCR text hints at vehicle lists beyond current page window, try more pages
-            if _needs_more_ocr(text):
-                st.warning("⚠️ Detected vehicle list beyond OCR range; scanning more pages...")
-                extra_text = _ocr_text_from_pdf(
-                    pdf_bytes,
-                    max_pages=OCR_MAX_PAGES_EXTRA,
-                    start_page=OCR_MAX_PAGES,
-                    resolution=200,
-                )
-                if extra_text:
-                    text = (text + "\n" + extra_text).strip()
-                    st.success(f"✅ Extra OCR added {len(extra_text)} characters")
-                else:
-                    st.warning("⚠️ Extra OCR produced no text")
-
-            # If we still have no registrations but Minigruppe/oversikt exists, run high-res OCR
-            if _needs_highres_ocr(text):
-                st.warning("⚠️ No registrations found; running high-resolution OCR (300 DPI)...")
+            if force_gjensidige_300_full:
+                st.warning("Gjensidige mode: running OCR at 300 DPI from page 1 for full document...")
                 hi_text = _ocr_text_from_pdf(pdf_bytes, max_pages=None, start_page=0, resolution=300)
                 if hi_text:
                     text = (text + "\n" + hi_text).strip()
-                    st.success(f"✅ High-res OCR added {len(hi_text)} characters")
+                    st.success(f"High-res OCR added {len(hi_text)} characters")
                 else:
-                    st.warning("⚠️ High-res OCR produced no text")
+                    st.warning("High-res OCR produced no text")
+            else:
+                st.warning("Attempting OCR fallback...")
+                ocr_text = _ocr_text_from_pdf(pdf_bytes, max_pages=OCR_MAX_PAGES, start_page=0, resolution=200)
+                if ocr_text:
+                    text = (text + "\n" + ocr_text).strip()
+                    st.success(f"OCR added {len(ocr_text)} characters")
+                else:
+                    st.warning("OCR produced no text")
+
+                # If the OCR text hints at vehicle lists beyond current page window, try more pages
+                if _needs_more_ocr(text):
+                    st.warning("Detected vehicle list beyond OCR range; scanning more pages...")
+                    extra_text = _ocr_text_from_pdf(
+                        pdf_bytes,
+                        max_pages=OCR_MAX_PAGES_EXTRA,
+                        start_page=OCR_MAX_PAGES,
+                        resolution=200,
+                    )
+                    if extra_text:
+                        text = (text + "\n" + extra_text).strip()
+                        st.success(f"Extra OCR added {len(extra_text)} characters")
+                    else:
+                        st.warning("Extra OCR produced no text")
+
+                # If we still have no registrations but Minigruppe/oversikt exists, run high-res OCR
+                if _needs_highres_ocr(text):
+                    st.warning("No registrations found; running high-resolution OCR (300 DPI)...")
+                    hi_text = _ocr_text_from_pdf(pdf_bytes, max_pages=None, start_page=0, resolution=300)
+                    if hi_text:
+                        text = (text + "\n" + hi_text).strip()
+                        st.success(f"High-res OCR added {len(hi_text)} characters")
+                    else:
+                        st.warning("High-res OCR produced no text")
 
         return text
 
@@ -162,7 +179,10 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
         import traceback
         st.code(traceback.format_exc())
         # Try OCR even if pdfplumber fails
-        ocr_text = _ocr_text_from_pdf(pdf_bytes, max_pages=OCR_MAX_PAGES, start_page=0)
+        if force_gjensidige_300_full:
+            ocr_text = _ocr_text_from_pdf(pdf_bytes, max_pages=None, start_page=0, resolution=300)
+        else:
+            ocr_text = _ocr_text_from_pdf(pdf_bytes, max_pages=OCR_MAX_PAGES, start_page=0)
         if ocr_text:
             st.success(f"✅ OCR added {len(ocr_text)} characters after error")
             return ocr_text
@@ -305,7 +325,7 @@ def _needs_highres_ocr(text: str) -> bool:
 # FIELD EXTRACTION
 # ---------------------------------------------------------
 
-def extract_fields_from_pdf(pdf_bytes: bytes) -> dict:
+def extract_fields_from_pdf(pdf_bytes: bytes, provider_hint: str | None = None) -> dict:
     """
     Extracts fields from PDF:
     - org number
@@ -319,7 +339,7 @@ def extract_fields_from_pdf(pdf_bytes: bytes) -> dict:
     st.write("🔍 **PDF PARSER: Starting extraction**")
     st.write("=" * 50)
 
-    txt = extract_text_from_pdf(pdf_bytes)
+    txt = extract_text_from_pdf(pdf_bytes, provider_hint=provider_hint)
     fields = {}
 
     if not txt:

@@ -14,12 +14,12 @@ from app_modules.download import download_excel_file
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _extract_fields_from_pdf_cached(pdf_bytes: bytes) -> dict:
+def _extract_fields_from_pdf_cached(pdf_bytes: bytes, provider_hint: str) -> dict:
     """
     Cache PDF field extraction per file content to avoid re-parsing
     the same uploads on every Streamlit rerun.
     """
-    return extract_fields_from_pdf(pdf_bytes)
+    return extract_fields_from_pdf(pdf_bytes, provider_hint=provider_hint)
 
 
 @contextmanager
@@ -39,7 +39,7 @@ def _suppress_streamlit_messages():
             setattr(st, name, original)
 
 
-def _collect_pdf_fields(pdf_uploads, progress=None, start_pct=10, end_pct=45) -> dict:
+def _collect_pdf_fields(pdf_uploads, provider_hint: str, progress=None, start_pct=10, end_pct=45) -> dict:
     """Extract and merge fields from uploaded PDFs."""
     pdf_fields = {}
     if not pdf_uploads:
@@ -55,7 +55,7 @@ def _collect_pdf_fields(pdf_uploads, progress=None, start_pct=10, end_pct=45) ->
 
         pdf_bytes = uploaded_pdf.getvalue()
         with _suppress_streamlit_messages():
-            extracted_fields = _extract_fields_from_pdf_cached(pdf_bytes)
+            extracted_fields = _extract_fields_from_pdf_cached(pdf_bytes, provider_hint)
 
         if not extracted_fields:
             continue
@@ -280,6 +280,7 @@ def run():
 
             pdf_fields = _collect_pdf_fields(
                 pdf_uploads=pdf_uploads,
+                provider_hint=vehicle_provider,
                 progress=progress,
                 start_pct=15,
                 end_pct=45,
