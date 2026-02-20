@@ -1,41 +1,27 @@
 import streamlit as st
-import app_modules.input as input_module
+from app_modules import main_page
 
-# SIDEBAR IS NOW VISIBLE!
+
 st.set_page_config(
     layout="wide",
-    initial_sidebar_state="expanded"  # Changed from "collapsed" to "expanded"
+    initial_sidebar_state="collapsed",
 )
 
-# REMOVED the CSS that hides the sidebar!
-# The sidebar will now be visible for debugging
+# Hide the Streamlit sidebar and collapsed menu button for a cleaner UI.
+st.markdown(
+    """
+    <style>
+    [data-testid="stSidebar"] { display: none !important; }
+    [data-testid="collapsedControl"] { display: none !important; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-# Clean imports
-from app_modules import main_page
-from app_modules import company_data
-from app_modules.insurers.shared import pdf_parser as shared_pdf_parser
-from app_modules.Sheets.Sammendrag import summery_getter as summary
-from app_modules.insurers.shared import excel_filler as shared_excel_filler
-from app_modules import template_loader
-from app_modules import download
-
-# Sidebar page mapping
-PAGES = {
-    "🏠 Hovedside": main_page,
-    "📄 Input-modul": input_module,
-    "🏢 Company Data": company_data,
-    "📄 PDF Parser": shared_pdf_parser,
-    "📝 Summary Generator": summary,
-    "📊 Excel Filler": shared_excel_filler,
-    "📁 Template Loader": template_loader,
-    "📥 Download": download,
-}
 
 def main():
-    st.sidebar.title("Navigasjon")
-    choice = st.sidebar.radio("Velg side:", list(PAGES.keys()))
-    page = PAGES[choice]
-    page.run()
+    main_page.run()
+
 
 if __name__ == "__main__":
     main()

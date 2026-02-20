@@ -253,13 +253,13 @@ def run():
     col_pdf, col_provider = st.columns([2, 1])
     with col_pdf:
         pdf_uploads = st.file_uploader(
-            "Upload PDF(s) (optional)",
+            "Upload PDF(s)",
             type=["pdf"],
             accept_multiple_files=True,
         )
     with col_provider:
         vehicle_provider = st.selectbox(
-            "Vehicle PDF type",
+            "Insurance type",
             ["Auto-detect", "Tryg", "Gjensidige", "If", "Ly"],
             index=0,
             help="Select insurer format for vehicle extraction",
@@ -269,44 +269,6 @@ def run():
     # STEP 6: SUMMARY
     # ---------------------------------------------------------
     summary_text = generate_company_summary(company_data)
-
-    # ---------------------------------------------------------
-    # PREVIEW DATA (without PDF extraction)
-    # ---------------------------------------------------------
-    preview_fields = dict(company_data)
-    preview_fields["company_summary"] = summary_text
-    preview_fields["vehicle_provider"] = vehicle_provider
-
-    st.divider()
-    st.subheader("Data Preview")
-
-    col_left, col_right = st.columns(2)
-
-    with col_left:
-        st.markdown("**Company Info (from BRREG):**")
-        st.write("Company name:", preview_fields.get("company_name", ""))
-        st.write("Organization number:", preview_fields.get("org_number", ""))
-        st.write("Address:", preview_fields.get("address", ""))
-        st.write("Postal code:", preview_fields.get("post_nr", ""))
-        st.write("City:", preview_fields.get("city", ""))
-        st.write("Employees:", preview_fields.get("employees", ""))
-        st.write("NACE code:", preview_fields.get("nace_code", ""))
-        st.write("NACE description:", preview_fields.get("nace_description", ""))
-
-    with col_right:
-        st.markdown("**Summary:**")
-        st.info(summary_text or "No company description available.")
-
-        if financial_data:
-            st.markdown("**Financial Data (manually entered):**")
-            if preview_fields.get("sum_driftsinnt_2024"):
-                st.write("Revenue 2024:", preview_fields.get("sum_driftsinnt_2024"))
-            if preview_fields.get("driftsresultat_2024"):
-                st.write("Operating result 2024:", preview_fields.get("driftsresultat_2024"))
-            if preview_fields.get("sum_driftsinnt_2023"):
-                st.write("Revenue 2023:", preview_fields.get("sum_driftsinnt_2023"))
-
-    st.divider()
 
     # ---------------------------------------------------------
     # STEP 7: PROCESS & DOWNLOAD
