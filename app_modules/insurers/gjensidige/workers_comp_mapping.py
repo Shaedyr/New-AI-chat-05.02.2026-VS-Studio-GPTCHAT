@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import re
 
+CELL_MAP: dict = {}
+
 
 ROW_CONFIG = {
     3: {
@@ -137,3 +139,5 @@ def transform_data(extracted: dict) -> dict:
 
     return out
 
+
+__all__ = ["CELL_MAP", "transform_data"]

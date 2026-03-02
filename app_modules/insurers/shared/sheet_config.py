@@ -5,7 +5,7 @@ This file imports and aggregates all sheet mappings.
 """
 
 # Import Sammendrag mapping
-from app_modules.Sheets.Sammendrag.mapping import (
+from app_modules.Sammendrag.mapping import (
     CELL_MAP as SAMMENDRAG_MAP,
     transform_data as transform_sammendrag
 )

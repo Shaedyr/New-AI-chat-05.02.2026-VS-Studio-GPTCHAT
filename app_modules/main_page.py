@@ -12,9 +12,8 @@ from app_modules.company_data import (
     format_company_data,
     search_brreg_live,
 )
-from app_modules.Sheets.Sammendrag.summery_getter import generate_company_summary
-from app_modules.insurers.shared.pdf_parser import extract_fields_from_pdf
-from app_modules.insurers.shared.excel_filler import fill_excel
+from app_modules.Sammendrag.summery_getter import generate_company_summary
+from app_modules.insurers.router import get_insurer_handlers
 from app_modules.download import download_excel_file
 
 
@@ -24,6 +23,7 @@ def _extract_fields_from_pdf_cached(pdf_bytes: bytes, provider_hint: str) -> dic
     Cache PDF field extraction per file content to avoid re-parsing
     the same uploads on every Streamlit rerun.
     """
+    extract_fields_from_pdf, _ = get_insurer_handlers(provider_hint)
     return extract_fields_from_pdf(pdf_bytes, provider_hint=provider_hint)
 
 
@@ -356,6 +356,7 @@ def run():
             merged_fields["vehicle_provider"] = vehicle_provider
 
             progress.progress(70, text="Generating Excel file...")
+            _, fill_excel = get_insurer_handlers(vehicle_provider)
             with _suppress_streamlit_messages(enabled=is_production_mode()):
                 excel_bytes, fill_report = fill_excel(
                     template_bytes=template_bytes,

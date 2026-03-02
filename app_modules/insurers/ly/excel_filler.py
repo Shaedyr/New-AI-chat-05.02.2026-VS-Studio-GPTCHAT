@@ -1,5 +1,5 @@
 from app_modules.insurers.shared.excel_filler import fill_excel as fill_excel_base
-from app_modules.insurers.tryg.sheet_config import SHEET_MAPPINGS, transform_for_sheet
+from app_modules.insurers.ly.sheet_config import SHEET_MAPPINGS, transform_for_sheet
 
 
 def fill_excel(template_bytes, field_values, summary_text, return_report=False):

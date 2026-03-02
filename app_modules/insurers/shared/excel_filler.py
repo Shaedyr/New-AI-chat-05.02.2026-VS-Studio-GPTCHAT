@@ -88,7 +88,14 @@ def _fill_dynamic_sheet(ws, transformed_data: dict) -> int:
     return filled
 
 
-def fill_excel(template_bytes, field_values, summary_text, return_report=False):
+def fill_excel(
+    template_bytes,
+    field_values,
+    summary_text,
+    return_report=False,
+    sheet_mappings=None,
+    transform_for_sheet_fn=None,
+):
     """
     Fill Excel template with data from field_values.
 
@@ -97,6 +104,8 @@ def fill_excel(template_bytes, field_values, summary_text, return_report=False):
         field_values: Dictionary of field values to fill
         summary_text: Company summary text
         return_report: If True, return (excel_bytes, report)
+        sheet_mappings: Optional sheet mapping dict (insurer-specific override)
+        transform_for_sheet_fn: Optional transform resolver (insurer-specific override)
 
     Returns:
         Filled Excel file as bytes
@@ -122,7 +131,10 @@ def fill_excel(template_bytes, field_values, summary_text, return_report=False):
         "summary": {"status": "not_run", "cell": None, "error": None},
     }
 
-    for sheet_name in SHEET_MAPPINGS.keys():
+    active_mappings = sheet_mappings if sheet_mappings is not None else SHEET_MAPPINGS
+    active_transform = transform_for_sheet_fn if transform_for_sheet_fn is not None else transform_for_sheet
+
+    for sheet_name in active_mappings.keys():
         if sheet_name not in wb.sheetnames:
             st.warning(f"Sheet '{sheet_name}' not found in template")
             report["sheets"].append(
@@ -146,8 +158,8 @@ def fill_excel(template_bytes, field_values, summary_text, return_report=False):
         }
 
         try:
-            transformed_data = transform_for_sheet(sheet_name, field_values)
-            cell_map = SHEET_MAPPINGS.get(sheet_name, {})
+            transformed_data = active_transform(sheet_name, field_values)
+            cell_map = active_mappings.get(sheet_name, {})
 
             if cell_map:
                 sheet_result["mapping_type"] = "static"
@@ -203,4 +215,3 @@ def run():
     st.title("Excel Filler Module")
     st.write("This module fills Excel templates with extracted data.")
     st.info("Used by the main page to create filled Excel files.")
-
