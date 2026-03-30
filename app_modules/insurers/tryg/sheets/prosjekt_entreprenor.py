@@ -1,14 +1,6 @@
-from app_modules.insurers.shared.project_entrepreneur_mapping import (
+from app_modules.insurers.tryg.project_entrepreneur_mapping import (
     CELL_MAP,
-    transform_data as base_transform_data,
+    transform_data,
 )
 
-
-def transform_data(extracted: dict) -> dict:
-    data = dict(extracted or {})
-    data["vehicle_provider"] = "tryg"
-    return base_transform_data(data)
-
-
 __all__ = ["CELL_MAP", "transform_data"]
-

@@ -20,8 +20,8 @@ from app_modules.download import download_excel_file
 @st.cache_data(ttl=3600, show_spinner=False)
 def _extract_fields_from_pdf_cached(pdf_bytes: bytes, provider_hint: str) -> dict:
     """
-    Cache PDF field extraction per file content to avoid re-parsing
-    the same uploads on every Streamlit rerun.
+    Mellomlagrer PDF-ekstraksjon per filinnhold for å unngå
+    ny parsing ved hver Streamlit-rerun.
     """
     extract_fields_from_pdf, _ = get_insurer_handlers(provider_hint)
     return extract_fields_from_pdf(pdf_bytes, provider_hint=provider_hint)
@@ -49,7 +49,7 @@ def _suppress_streamlit_messages(enabled: bool = True):
 
 
 def _collect_pdf_fields(pdf_uploads, provider_hint: str, progress=None, start_pct=10, end_pct=45) -> dict:
-    """Extract and merge fields from uploaded PDFs."""
+    """Ekstraherer og slår sammen felter fra opplastede PDF-er."""
     pdf_fields = {}
     if not pdf_uploads:
         return pdf_fields
@@ -60,7 +60,7 @@ def _collect_pdf_fields(pdf_uploads, provider_hint: str, progress=None, start_pc
     for idx, uploaded_pdf in enumerate(pdf_uploads, start=1):
         if progress:
             pct = start_pct + int((idx / total) * (end_pct - start_pct))
-            progress.progress(pct, text=f"Reading PDF {idx}/{total}...")
+            progress.progress(pct, text=f"Leser PDF {idx}/{total}...")
 
         pdf_bytes = uploaded_pdf.getvalue()
         with _suppress_streamlit_messages(enabled=is_production_mode()):
@@ -86,11 +86,11 @@ def _collect_pdf_fields(pdf_uploads, provider_hint: str, progress=None, start_pc
 
 
 def _trim_large_strings(value, max_chars: int = 15000):
-    """Trim large strings for support bundle payloads."""
+    """Trimmer store tekstfelt i supportpakken."""
     if isinstance(value, str):
         if len(value) <= max_chars:
             return value
-        return f"{value[:max_chars]} ... [trimmed {len(value) - max_chars} chars]"
+        return f"{value[:max_chars]} ... [trimmet {len(value) - max_chars} tegn]"
     if isinstance(value, dict):
         return {k: _trim_large_strings(v, max_chars=max_chars) for k, v in value.items()}
     if isinstance(value, list):
@@ -100,8 +100,8 @@ def _trim_large_strings(value, max_chars: int = 15000):
 
 def _build_support_bundle(company_name: str, vehicle_provider: str, merged_fields: dict, fill_report: dict) -> bytes:
     """
-    Build a zip bundle for troubleshooting without exposing secrets.
-    Includes report + trimmed merged data + basic notes.
+    Lager en zip-pakke for feilsøking uten å eksponere hemmeligheter.
+    Inneholder rapport + trimmet datasett + notater.
     """
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     mode = "production" if is_production_mode() else "development"
@@ -116,12 +116,12 @@ def _build_support_bundle(company_name: str, vehicle_provider: str, merged_field
     }
 
     notes = [
-        f"Generated: {timestamp}",
-        f"Mode: {mode}",
-        f"Insurance type: {vehicle_provider}",
-        f"Company: {company_name}",
+        f"Generert: {timestamp}",
+        f"Modus: {mode}",
+        f"Forsikringstype: {vehicle_provider}",
+        f"Selskap: {company_name}",
         "",
-        "This bundle excludes secrets and API keys.",
+        "Denne pakken ekskluderer hemmeligheter og API-nøkler.",
     ]
 
     out = BytesIO()
@@ -135,9 +135,15 @@ def _build_support_bundle(company_name: str, vehicle_provider: str, merged_field
 
 
 def run():
-    st.title("PDF -> Excel (BRREG + Manual Entry)")
-    st.caption("Fetch company information and update Excel automatically")
-    st.divider()
+    st.markdown(
+        """
+        <div class="ui-hero">
+          <h1>ForsikringsUtfyller</h1>
+          <p>Hent selskapsinformasjon, les forsikrings-PDF-er og fyll Excel automatisk.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     # =========================================================
     # INITIALIZE SESSION STATE
@@ -152,11 +158,13 @@ def run():
     # ---------------------------------------------------------
     # STEP 1: SEARCH BAR + RESULT DROPDOWN
     # ---------------------------------------------------------
-    st.subheader("Find company")
+    st.markdown('<div class="ui-card">', unsafe_allow_html=True)
+    st.markdown("### Finn selskap")
+    st.markdown("<p>Søk i Brreg og velg riktig foretak før du fortsetter.</p>", unsafe_allow_html=True)
 
     query = st.text_input(
-        "Search for company",
-        placeholder="Type at least 2 characters to search",
+        "Søk etter selskap",
+        placeholder="Skriv minst 2 tegn for å søke",
         key="search_input",
     )
 
@@ -190,10 +198,10 @@ def run():
                 current_index = company_options.index(current_label)
 
         selected_label = st.selectbox(
-            "Select company",
+            "Velg selskap",
             company_options,
             index=current_index,
-            placeholder="Select a company",
+            placeholder="Velg et selskap",
             key="company_selector",
         )
 
@@ -202,9 +210,11 @@ def run():
             idx = company_options.index(selected_label)
             st.session_state.selected_company = st.session_state.search_results[idx]
 
+    st.markdown("</div>", unsafe_allow_html=True)
+
     # Check if we have a selected company
     if not st.session_state.selected_company:
-        st.info("Select a company to continue.")
+        st.info("Velg et selskap for å fortsette.")
         return
 
     # ---------------------------------------------------------
@@ -228,18 +238,17 @@ def run():
 
     company_data = format_company_data(raw_company_data)
 
-    st.divider()
-
     # ---------------------------------------------------------
     # STEP 4: MANUAL FINANCIAL DATA ENTRY
     # ---------------------------------------------------------
-    st.subheader("Financial Data (Optional)")
+    st.markdown('<div class="ui-card">', unsafe_allow_html=True)
+    st.markdown("### Økonomiske data (valgfritt)")
 
     st.info(
         """
-    Enter financial data manually (you can find this on Proff.no)
+    Fyll inn økonomiske data manuelt (du kan finne disse på Proff.no)
 
-    Leave blank if not needed - the app will work without it.
+    La feltene stå tomme hvis det ikke trengs - appen fungerer uten.
     """
     )
 
@@ -248,24 +257,24 @@ def run():
 
     with col1:
         st.markdown("**2024**")
-        revenue_2024 = st.text_input("Revenue", key="rev_2024", placeholder="e.g., 15000000")
-        operating_2024 = st.text_input("Operating Result", key="op_2024", placeholder="e.g., 1500000")
-        tax_2024 = st.text_input("Result Before Tax", key="tax_2024", placeholder="e.g., 1200000")
-        assets_2024 = st.text_input("Total Assets", key="assets_2024", placeholder="e.g., 8000000")
+        revenue_2024 = st.text_input("Omsetning", key="rev_2024", placeholder="f.eks. 15000000")
+        operating_2024 = st.text_input("Driftsresultat", key="op_2024", placeholder="f.eks. 1500000")
+        tax_2024 = st.text_input("Resultat før skatt", key="tax_2024", placeholder="f.eks. 1200000")
+        assets_2024 = st.text_input("Sum eiendeler", key="assets_2024", placeholder="f.eks. 8000000")
 
     with col2:
         st.markdown("**2023**")
-        revenue_2023 = st.text_input("Revenue", key="rev_2023", placeholder="e.g., 14000000")
-        operating_2023 = st.text_input("Operating Result", key="op_2023", placeholder="e.g., 1400000")
-        tax_2023 = st.text_input("Result Before Tax", key="tax_2023", placeholder="e.g., 1100000")
-        assets_2023 = st.text_input("Total Assets", key="assets_2023", placeholder="e.g., 7500000")
+        revenue_2023 = st.text_input("Omsetning", key="rev_2023", placeholder="f.eks. 14000000")
+        operating_2023 = st.text_input("Driftsresultat", key="op_2023", placeholder="f.eks. 1400000")
+        tax_2023 = st.text_input("Resultat før skatt", key="tax_2023", placeholder="f.eks. 1100000")
+        assets_2023 = st.text_input("Sum eiendeler", key="assets_2023", placeholder="f.eks. 7500000")
 
     with col3:
         st.markdown("**2022**")
-        revenue_2022 = st.text_input("Revenue", key="rev_2022", placeholder="e.g., 13000000")
-        operating_2022 = st.text_input("Operating Result", key="op_2022", placeholder="e.g., 1300000")
-        tax_2022 = st.text_input("Result Before Tax", key="tax_2022", placeholder="e.g., 1000000")
-        assets_2022 = st.text_input("Total Assets", key="assets_2022", placeholder="e.g., 7000000")
+        revenue_2022 = st.text_input("Omsetning", key="rev_2022", placeholder="f.eks. 13000000")
+        operating_2022 = st.text_input("Driftsresultat", key="op_2022", placeholder="f.eks. 1300000")
+        tax_2022 = st.text_input("Resultat før skatt", key="tax_2022", placeholder="f.eks. 1000000")
+        assets_2022 = st.text_input("Sum eiendeler", key="assets_2022", placeholder="f.eks. 7000000")
 
     # Collect financial data
     financial_data = {}
@@ -297,31 +306,34 @@ def run():
         financial_data["sum_eiendeler_2022"] = assets_2022.strip()
 
     if financial_data:
-        st.success(f"{len(financial_data)} financial fields entered")
+        st.success(f"{len(financial_data)} økonomifelter registrert")
     else:
-        st.info("No financial data entered - will use only BRREG company data")
+        st.info("Ingen økonomidata registrert - bruker kun BRREG-data")
 
     company_data.update(financial_data)
-
-    st.divider()
+    st.markdown("</div>", unsafe_allow_html=True)
 
     # ---------------------------------------------------------
     # STEP 5: PDF UPLOAD
     # ---------------------------------------------------------
+    st.markdown('<div class="ui-card">', unsafe_allow_html=True)
+    st.markdown("### Last opp dokumenter")
+    st.markdown("<p>Legg til en eller flere PDF-er, og velg riktig forsikringstype.</p>", unsafe_allow_html=True)
     col_pdf, col_provider = st.columns([2, 1])
     with col_pdf:
         pdf_uploads = st.file_uploader(
-            "Upload PDF(s)",
+            "Last opp PDF(er)",
             type=["pdf"],
             accept_multiple_files=True,
         )
     with col_provider:
         vehicle_provider = st.selectbox(
-            "Insurance type",
-            ["Select insurance type", "Tryg", "Gjensidige", "If", "Ly"],
+            "Forsikringstype",
+            ["Velg forsikringstype", "Tryg", "Gjensidige", "If", "Ly", "Frende", "Landkreditt"],
             index=0,
-            help="Select insurer format for vehicle extraction",
+            help="Velg forsikringsformat for uthenting",
         )
+    st.markdown("</div>", unsafe_allow_html=True)
 
     # ---------------------------------------------------------
     # STEP 6: SUMMARY
@@ -331,14 +343,14 @@ def run():
     # ---------------------------------------------------------
     # STEP 7: PROCESS & DOWNLOAD
     # ---------------------------------------------------------
-    if st.button("Process & Update Excel", use_container_width=True):
-        if vehicle_provider == "Select insurance type":
-            st.warning("Select insurance type before processing.")
+    if st.button("Behandle og oppdater Excel", use_container_width=True):
+        if vehicle_provider == "Velg forsikringstype":
+            st.warning("Velg forsikringstype før behandling.")
             return
 
-        progress = st.progress(0, text="Starting process...")
+        progress = st.progress(0, text="Starter behandling...")
         try:
-            progress.progress(10, text="Preparing inputs...")
+            progress.progress(10, text="Forbereder inndata...")
 
             pdf_fields = _collect_pdf_fields(
                 pdf_uploads=pdf_uploads,
@@ -348,14 +360,14 @@ def run():
                 end_pct=45,
             )
 
-            progress.progress(55, text="Merging data...")
+            progress.progress(55, text="Slår sammen data...")
             merged_fields = {}
             merged_fields.update(pdf_fields)
             merged_fields.update(company_data)
             merged_fields["company_summary"] = summary_text
             merged_fields["vehicle_provider"] = vehicle_provider
 
-            progress.progress(70, text="Generating Excel file...")
+            progress.progress(70, text="Genererer Excel-fil...")
             _, fill_excel = get_insurer_handlers(vehicle_provider)
             with _suppress_streamlit_messages(enabled=is_production_mode()):
                 excel_bytes, fill_report = fill_excel(
@@ -371,39 +383,39 @@ def run():
             ]
             if failed_sheets:
                 failed_names = ", ".join(s.get("sheet", "?") for s in failed_sheets)
-                st.warning(f"Export completed with partial issues in: {failed_names}")
+                st.warning(f"Eksport fullført med delvise feil i: {failed_names}")
 
-            progress.progress(90, text="Preparing downloads...")
+            progress.progress(90, text="Forbereder nedlasting...")
             download_excel_file(
                 excel_bytes=excel_bytes,
-                company_name=merged_fields.get("company_name", "Company"),
+                company_name=merged_fields.get("company_name", "Selskap"),
             )
 
             support_bytes = _build_support_bundle(
-                company_name=merged_fields.get("company_name", "Company"),
+                company_name=merged_fields.get("company_name", "Selskap"),
                 vehicle_provider=vehicle_provider,
                 merged_fields=merged_fields,
                 fill_report=fill_report,
             )
 
             safe_name = "".join(
-                c for c in merged_fields.get("company_name", "Company")
+                c for c in merged_fields.get("company_name", "Selskap")
                 if c.isalnum() or c in " _-"
-            ).strip() or "Company"
+            ).strip() or "Selskap"
             stamp = datetime.now().strftime("%Y%m%d_%H%M")
             support_filename = f"{safe_name}_{stamp}_support.zip"
 
             st.download_button(
-                label="Download support bundle (.zip)",
+                label="Last ned supportpakke (.zip)",
                 data=support_bytes,
                 file_name=support_filename,
                 mime="application/zip",
             )
 
-            progress.progress(100, text="Done")
+            progress.progress(100, text="Ferdig")
         except Exception as e:
             progress.empty()
             if is_production_mode():
-                st.error("Processing failed. Check logs for details.")
+                st.error("Behandling feilet. Sjekk logger for detaljer.")
             else:
-                st.error(f"Processing failed: {e}")
+                st.error(f"Behandling feilet: {e}")

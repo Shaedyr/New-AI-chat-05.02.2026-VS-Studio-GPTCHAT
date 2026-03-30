@@ -4,8 +4,8 @@ from datetime import datetime
 
 def download_excel_file(excel_bytes, company_name="Selskap"):
     """
-    Displays a download button for the final Excel file.
-    Generates a clean filename with timestamp.
+    Viser en nedlastingsknapp for ferdig Excel-fil.
+    Lager et ryddig filnavn med tidsstempel.
     """
 
     if not excel_bytes:
@@ -33,6 +33,6 @@ def download_excel_file(excel_bytes, company_name="Selskap"):
 # PAGE VIEW (so it works as a selectable page)
 # ---------------------------------------------------------
 def run():
-    st.title("📥 Download Excel")
+    st.title("📥 Last ned Excel")
     st.write("Denne siden viser nedlastingsfunksjonen.")
     st.info("Excel-filen genereres på hovedsiden og lastes ned her.")

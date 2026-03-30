@@ -16,9 +16,9 @@ def load_template():
         template_bytes = _fetch_template_bytes()  # <-- THIS is what fill_excel needs
 
         st.session_state["template_bytes"] = template_bytes
-        st.success("Excel template loaded from Google Sheets")
+        st.success("Excel-mal lastet fra Google Sheets")
         return template_bytes
 
     except Exception as e:
-        st.error(f"Could not load Excel template: {e}")
+        st.error(f"Kunne ikke laste Excel-mal: {e}")
         st.stop()
