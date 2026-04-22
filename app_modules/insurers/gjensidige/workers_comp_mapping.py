@@ -65,6 +65,32 @@ def _normalize_digits(value: str) -> str:
     return re.sub(r"\D", "", value or "").strip()
 
 
+def _normalize_count_value(value: str) -> str:
+    """
+    Normalize count-like values for fields such as "5,00 arsverk".
+    Keeps plain integers as-is and collapses decimal-formatted whole numbers.
+    """
+    raw = (value or "").strip().replace("\u00a0", " ")
+    if not raw:
+        return ""
+
+    compact = raw.replace(" ", "")
+    if not compact:
+        return ""
+
+    if "," in compact or "." in compact:
+        normalized = compact.replace(",", ".")
+        try:
+            number = float(normalized)
+            if number.is_integer():
+                return str(int(number))
+            return str(number).replace(".", ",")
+        except ValueError:
+            pass
+
+    return _normalize_digits(compact)
+
+
 def _extract_amount(line: str) -> str:
     candidates = re.findall(r"\b([0-9]{1,3}(?:[\s\.,][0-9]{3})+|[0-9]{4,6})\b", line)
     if not candidates:
@@ -95,7 +121,7 @@ def _extract_count(normalized_line: str, kind: str) -> str:
 
     if not match:
         return ""
-    return _normalize_digits(match.group(1))
+    return _normalize_count_value(match.group(1))
 
 
 def _extract_row_values(pdf_text: str, label_patterns: list[str]) -> dict[str, str]:

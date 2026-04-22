@@ -1,7 +1,11 @@
 # app_modules/Sheets/Sammendrag/mapping.py
 """
 Mapping configuration for the Sammendrag (Summary) sheet.
-Includes BRREG basic data + Proff.no financial data in multiple locations
+Includes BRREG basic data + Proff.no financial data.
+
+Financial policy (current template):
+- Fill ONLY E11:G14 for Proff/manual financial values.
+- Do NOT write financial values to D3:F6.
 """
 
 # Cell mapping: field_name -> Excel cell reference
@@ -19,22 +23,7 @@ CELL_MAP = {
     "nace_description": "B10",
     # B11 - homepage removed (not needed)
     
-    # Proff.no Financial data - First location (D3-F6)
-    "sum_driftsinnt_2024": "D3",
-    "sum_driftsinnt_2023": "E3",
-    "sum_driftsinnt_2022": "F3",
-    "driftsresultat_2024": "D4",
-    "driftsresultat_2023": "E4",
-    "driftsresultat_2022": "F4",
-    "ord_res_f_skatt_2024": "D5",
-    "ord_res_f_skatt_2023": "E5",
-    "ord_res_f_skatt_2022": "F5",
-    "sum_eiendeler_2024": "D6",
-    "sum_eiendeler_2023": "E6",
-    "sum_eiendeler_2022": "F6",
-    
-    # Proff.no Financial data - Second location (E11-G14)
-    # Same data as above, just in different cells
+    # Proff.no Financial data - ONLY location (E11-G14)
     "sum_driftsinnt_2024_alt": "E11",
     "sum_driftsinnt_2023_alt": "F11",
     "sum_driftsinnt_2022_alt": "G11",
@@ -73,19 +62,11 @@ def transform_data(extracted: dict) -> dict:
     out["nace_description"] = extracted.get("nace_description") or ""
     # Homepage removed - not needed
     
-    # Proff.no Financial data
-    # First location (D3-F6)
-    for key in ("sum_driftsinnt", "driftsresultat", "ord_res_f_skatt", "sum_eiendeler"):
-        for year in ("2024", "2023", "2022"):
-            field_name = f"{key}_{year}"
-            out[field_name] = extracted.get(field_name, "")
-    
-    # Second location (E11-G14) - same data, different cells
+    # Proff.no Financial data (E11-G14 only)
     for key in ("sum_driftsinnt", "driftsresultat", "ord_res_f_skatt", "sum_eiendeler"):
         for year in ("2024", "2023", "2022"):
             field_name = f"{key}_{year}"
             alt_field_name = f"{key}_{year}_alt"
-            # Copy the same value to the _alt field
             out[alt_field_name] = extracted.get(field_name, "")
     
     return out

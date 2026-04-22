@@ -10,12 +10,12 @@ from app_modules.Sheets.Fordon.extractors.ly import extract_ly_vehicles
 
 
 VEHICLE_ROWS = {
-    "car": {"start": 3, "end": 27, "name": "Cars"},
-    "trailer": {"start": 31, "end": 45, "name": "Trailers"},
-    "moped": {"start": 49, "end": 63, "name": "Mopeds"},
-    "tractor": {"start": 67, "end": 81, "name": "Tractors"},
-    "boat": {"start": 85, "end": 99, "name": "Boats"},
-    "other": {"start": 103, "end": 117, "name": "?vrig (Other)"},
+    "car": {"start": 3, "end": 5, "name": "Cars"},
+    "trailer": {"start": 9, "end": 11, "name": "Trailers"},
+    "moped": {"start": 15, "end": 17, "name": "Mopeds"},
+    "tractor": {"start": 21, "end": 23, "name": "Tractors"},
+    "boat": {"start": 27, "end": 29, "name": "Boats"},
+    "other": {"start": 33, "end": 35, "name": "?vrig (Other)"},
 }
 
 
@@ -130,19 +130,26 @@ def transform_data(extracted: dict) -> dict:
         return out
 
     categorized = _categorize_vehicles(vehicles)
+    category_order = ["car", "trailer", "moped", "tractor", "boat", "other"]
+    fordon_expansions = {}
+    cumulative_row_shift = 0
 
-    for category, vehicles_in_category in categorized.items():
-        if not vehicles_in_category:
-            continue
+    for category in category_order:
+        vehicles_in_category = categorized.get(category, [])
 
         config = VEHICLE_ROWS[category]
         start, end = config["start"], config["end"]
+        capacity = max(0, end - start + 1)
+        extra_rows = max(0, len(vehicles_in_category) - capacity)
+        fordon_expansions[category] = extra_rows
+
+        if extra_rows > 0:
+            st.warning(f"Expanding {config['name']} section by {extra_rows} row(s)")
+
+        shifted_start = start + cumulative_row_shift
 
         for idx, vehicle in enumerate(vehicles_in_category):
-            row = start + idx
-            if row > end:
-                st.warning(f"Too many {config['name']} for template range")
-                break
+            row = shifted_start + idx
 
             for field, column in VEHICLE_COLUMNS.items():
                 cell_ref = f"{column}{row}"
@@ -169,6 +176,11 @@ def transform_data(extracted: dict) -> dict:
                     if value != "":
                         cell_styles[cell_ref] = dict(NUMERIC_CELL_STYLE)
                 out[cell_ref] = value
+
+        cumulative_row_shift += extra_rows
+
+    if any(v > 0 for v in fordon_expansions.values()):
+        out["_fordon_expansions"] = fordon_expansions
 
     if cell_styles:
         out["_cell_styles"] = cell_styles

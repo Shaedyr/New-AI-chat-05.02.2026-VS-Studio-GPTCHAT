@@ -28,11 +28,14 @@ MACHINE_BRANDS = [
     "New Holland",
     "Kubota",
 ]
-REG_TOKEN = r"[A-Z]{2}\s*\d(?:\s?\d){3,4}"
+# Keep registration matching on a single visual token sequence.
+# Using only space/tab separators avoids false joins across line breaks,
+# e.g. "... Equipment AS" + "\n9 591" being interpreted as "AS9591".
+REG_TOKEN = r"[A-Z]{2}[ \t]*\d(?:[ \t]?\d){3,4}"
 REG_WITH_SPACES_RE = re.compile(rf"\b({REG_TOKEN})\b", re.IGNORECASE)
 LABEL_RE = re.compile(r"\b(kjennemerke|reg\.?\s*nr|regnr|registreringsnummer)\b", re.IGNORECASE)
 YEAR_20XX_RE = re.compile(r"\b(20\d{2})\b")
-NUMBER_TOKEN_RE = re.compile(r"\b([0-9]{1,3}(?:[\s\.,][0-9]{3})+|[0-9]{5,6})\b")
+NUMBER_TOKEN_RE = re.compile(r"\b([0-9]{1,3}(?:[\s\.,][0-9]{3})+|[0-9]{4,6})\b")
 MASKINLOSORE_RE = re.compile(
     r"maskinl(?:\u00f8|o|0|@|\?|\u00c3\u00b8)s(?:\u00f8|o|0|@|\?|\u00c3\u00b8)re",
     re.IGNORECASE,
@@ -135,7 +138,7 @@ def _extract_registered_cars(pdf_text: str, seen: set[str]) -> list:
         make = match.group(1).strip()
         model = match.group(2).strip()
         year = match.group(3).strip()
-        reg = re.sub(r"\s+", "", match.group(4).strip())
+        reg = re.sub(r"\W+", "", match.group(4).strip().upper())
 
         if reg in seen:
             continue
@@ -144,6 +147,8 @@ def _extract_registered_cars(pdf_text: str, seen: set[str]) -> list:
         pos = match.start()
         section = _slice_context(pdf_text, pos, before=200, after=500)
         premium = _extract_premium_after_position(pdf_text, match.end())
+        if not premium:
+            premium = _extract_premium_by_registration(pdf_text, reg)
 
         vehicles.append(
             {
@@ -162,7 +167,7 @@ def _extract_registered_cars(pdf_text: str, seen: set[str]) -> list:
 
     for reg_match in REG_WITH_SPACES_RE.finditer(pdf_text):
         reg_raw = reg_match.group(1)
-        reg = reg_raw.replace(" ", "")
+        reg = re.sub(r"\W+", "", reg_raw.strip().upper())
 
         digits = re.sub(r"\D", "", reg)
         if len(digits) == 4 and digits.startswith(("19", "20")):
@@ -174,6 +179,8 @@ def _extract_registered_cars(pdf_text: str, seen: set[str]) -> list:
         window = _slice_context(pdf_text, pos, before=500, after=500)
         context_window = _slice_context(pdf_text, pos, before=120, after=120)
         premium = _extract_premium_after_position(pdf_text, reg_match.end())
+        if not premium:
+            premium = _extract_premium_by_registration(pdf_text, reg)
 
         found_brand = ""
         found_model = ""
@@ -411,23 +418,150 @@ def _normalize_digits(value: str) -> str:
     return re.sub(r"\D", "", value or "").strip()
 
 
+def _cut_at_markers(text: str, markers: tuple[str, ...]) -> str:
+    """Trim text at the first marker occurrence (case-insensitive)."""
+    if not text:
+        return ""
+    lowered = text.lower()
+    cut = len(text)
+    for marker in markers:
+        idx = lowered.find(marker.lower())
+        if idx != -1:
+            cut = min(cut, idx)
+    return text[:cut]
+
+
+def _extract_premium_by_registration(text: str, reg: str) -> str:
+    """
+    Registration-anchored premium fallback.
+    Useful for Gjensidige layouts where premium is listed in nearby table columns.
+    """
+    reg_clean = re.sub(r"\W+", "", (reg or "").upper())
+    if not text or len(reg_clean) < 6:
+        return ""
+
+    reg_pattern = r"\b" + r"\s*".join(re.escape(ch) for ch in reg_clean) + r"\b"
+    stop_markers = (
+        "TFA",
+        "UTSTEDT",
+        "FORSIKRINGSNUMMER",
+        "FORSIKRINGSBEVIS",
+    )
+
+    for match in re.finditer(reg_pattern, text, re.IGNORECASE):
+        direct_window = text[match.end() : min(len(text), match.end() + 260)]
+        direct_window = _cut_at_markers(direct_window, stop_markers)
+        for hit in NUMBER_TOKEN_RE.finditer(direct_window):
+            raw_token = hit.group(1)
+            value = _normalize_digits(raw_token)
+            if not value:
+                continue
+            if value == reg_clean[2:]:
+                continue
+            if 1900 <= int(value) <= 2100:
+                continue
+
+            # Skip registration-like tokens such as "... LJ 74897".
+            # Keep tokens with separators (e.g. "9 591"), which are typically money values.
+            if not any(sep in raw_token for sep in (" ", ".", ",")):
+                prefix = direct_window[max(0, hit.start() - 10) : hit.start()]
+                if re.search(r"[A-Za-z]\s*[A-Za-z]\s*$", prefix, re.IGNORECASE):
+                    continue
+
+            return value
+
+        # Multi-row table fallback:
+        # registrations can be listed first, then "Arspremie" values in order.
+        block = text[max(0, match.start() - 700) : min(len(text), match.start() + 1600)]
+        arspremie_match = re.search(r"Arspremie", block, re.IGNORECASE)
+        if not arspremie_match:
+            continue
+
+        regs_text = block[max(0, arspremie_match.start() - 900) : arspremie_match.start()]
+        regs_in_block: list[str] = []
+        for reg_match in REG_WITH_SPACES_RE.finditer(regs_text):
+            candidate = re.sub(r"\W+", "", reg_match.group(1).upper())
+            if candidate and candidate not in regs_in_block:
+                regs_in_block.append(candidate)
+
+        premiums_text = block[arspremie_match.end() :]
+        premiums_text = _cut_at_markers(
+            premiums_text,
+            stop_markers
+            + (
+                "Neringsbil Gruppe",
+                "Næringsbil Gruppe",
+                "Lastebil Gruppe",
+                "Henger Gruppe",
+            ),
+        )
+
+        premium_candidates: list[str] = []
+        for hit in NUMBER_TOKEN_RE.finditer(premiums_text):
+            value = _normalize_digits(hit.group(1))
+            if not value:
+                continue
+            if 1900 <= int(value) <= 2100:
+                continue
+            premium_candidates.append(value)
+
+        if not premium_candidates:
+            continue
+
+        if reg_clean in regs_in_block:
+            idx = regs_in_block.index(reg_clean)
+            if idx < len(premium_candidates):
+                return premium_candidates[idx]
+
+        return premium_candidates[0]
+
+    return ""
+
+
 def _extract_premium_after_position(text: str, start_pos: int) -> str:
     """
     Extract first numeric amount after a known vehicle token (typically row premium).
     """
     if not text:
         return ""
-    tail = text[start_pos : min(len(text), start_pos + 100)]
-    match = NUMBER_TOKEN_RE.search(tail)
-    if not match:
-        return ""
-    value = _normalize_digits(match.group(1))
-    if not value:
-        return ""
-    # avoid accidental year capture
-    if 1900 <= int(value) <= 2100:
-        return ""
-    return value
+
+    # Slightly larger window to catch premium values when OCR inserts extra line breaks.
+    tail = text[start_pos : min(len(text), start_pos + 350)]
+
+    # Prefer values after an explicit premium label when present.
+    premium_label = re.search(r"Arspremie", tail, re.IGNORECASE)
+    if premium_label:
+        labeled_tail = tail[premium_label.end() :]
+        for match in NUMBER_TOKEN_RE.finditer(labeled_tail):
+            value = _normalize_digits(match.group(1))
+            if not value:
+                continue
+            if 1900 <= int(value) <= 2100:
+                continue
+            return value
+
+    for match in NUMBER_TOKEN_RE.finditer(tail):
+        raw_token = match.group(1)
+        value = _normalize_digits(raw_token)
+        if not value:
+            continue
+        # avoid accidental year capture
+        if 1900 <= int(value) <= 2100:
+            continue
+
+        # Skip registration-like numbers (e.g. "LJ 74897") right before token.
+        # Keep tokens with separators (e.g. "9 591"), which are typically money values.
+        if not any(sep in raw_token for sep in (" ", ".", ",")):
+            prefix = tail[max(0, match.start() - 10) : match.start()]
+            if re.search(r"[A-Za-z]\s*[A-Za-z]\s*$", prefix, re.IGNORECASE):
+                continue
+
+            reg_like_span = tail[max(0, match.start() - 10) : match.end()]
+            if re.search(rf"[A-Za-z]\s*[A-Za-z]\s*{re.escape(raw_token)}\s*$", reg_like_span, re.IGNORECASE):
+                continue
+
+        return value
+    return ""
 
 
 def _extract_premium_from_window(text: str) -> str:

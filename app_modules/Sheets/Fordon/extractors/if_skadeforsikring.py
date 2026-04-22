@@ -15,7 +15,7 @@ import streamlit as st
 
 
 VEHICLE_TYPE_PATTERN = r"(Varebil|Personbil|Lastebil|Moped|Traktor|BÃ¥t|Båt|Tilhenger)"
-ANCHOR_RE = re.compile(r"Registreringsnummer:\s*([A-Z]{2}\d{5})")
+ANCHOR_RE = re.compile(r"Registreringsnummer:\s*([A-Z]{2}\d{4,5})")
 DEDUCTIBLE_RE = re.compile(
     r"Egenandel\s*-\s*Skader p\S* eget kj\S*ret\S*y:\s*([\d\s]+?)\s*kr",
     flags=re.IGNORECASE,
@@ -35,6 +35,10 @@ KNOWN_LEASING_COMPANIES = (
     "BN Bank",
 )
 
+BILAG_REG_LINE_RE = re.compile(r"^\s*([A-Z]{2}\d{4,5})\s+(\d{4})\s+(.+?)\s*$")
+BILAG_COMMA_ROW_RE = re.compile(r"^\s*([A-Z]{2}\d{4,5})\s*,\s*([^,]+?)(?:\s*,\s*|\s+)(.+?)\s*$")
+BILAG_PREMIUM_RE = re.compile(r"(\d{1,3}(?:\s\d{3})*)\s*kr\b", re.IGNORECASE)
+
 
 def extract_if_vehicles(pdf_text: str) -> list:
     """Extract vehicles from IF PDFs."""
@@ -51,7 +55,6 @@ def extract_if_vehicles(pdf_text: str) -> list:
         reg = anchor.group(1)
         if reg in seen:
             continue
-        seen.add(reg)
 
         next_anchor_start = anchors[idx + 1].start() if idx + 1 < len(anchors) else min(len(pdf_text), anchor.end() + 2200)
         block_start = max(0, anchor.start() - 350)
@@ -92,6 +95,7 @@ def extract_if_vehicles(pdf_text: str) -> list:
         }
 
         model_with_year = f"{make} {year}".strip()
+        seen.add(reg)
         vehicles.append(
             {
                 "registration": reg,
@@ -112,8 +116,171 @@ def extract_if_vehicles(pdf_text: str) -> list:
             f"egenandel: {deductible} | premium: {premium} | {leasing}"
         )
 
+    if _has_bilag_vehicle_lists(pdf_text):
+        fallback = _extract_if_bilag_table_vehicles(pdf_text, seen)
+        if fallback:
+            st.write(f"    - Bilag fallback vehicles: {len(fallback)}")
+            vehicles.extend(fallback)
+    elif not vehicles:
+        # Safety net for IF layouts that omit "Registreringsnummer:" blocks.
+        fallback = _extract_if_bilag_table_vehicles(pdf_text, seen)
+        if fallback:
+            st.write(f"    - Fallback vehicles: {len(fallback)}")
+            vehicles.extend(fallback)
+
     st.write(f"    - **Total: {len(vehicles)} vehicles**")
     return vehicles
+
+
+def _has_bilag_vehicle_lists(pdf_text: str) -> bool:
+    text = (pdf_text or "").lower()
+    return (
+        ("bilag 1" in text and "kjennetegn" in text)
+        or "næringsbiler" in text
+        or "neringsbiler" in text
+        or "storbiler" in text
+    )
+
+
+def _extract_if_bilag_table_vehicles(pdf_text: str, seen: set[str]) -> list:
+    """
+    Fallback parser for IF Bilag tables:
+    Example rows:
+      EB47847 2020 VOLKSWAGEN ID.3 ... 2 939 kr 11 933 kr
+      JH8240 2013 IVECO ... 18 674 kr
+    """
+    vehicles: list[dict] = []
+    current_type = "bil"
+
+    for raw_line in (pdf_text or "").splitlines():
+        line = (raw_line or "").strip()
+        if not line:
+            continue
+
+        lower = line.lower()
+        if "tilhengere" in lower:
+            current_type = "trailer"
+        elif "traktorer/atv" in lower or "traktorer" in lower:
+            current_type = "traktor"
+        elif "arbeidsmaskiner" in lower:
+            current_type = "traktor"
+        elif "næringsbiler" in lower or "neringsbiler" in lower or "storbiler" in lower:
+            current_type = "bil"
+        elif "snøscooter" in lower:
+            current_type = "traktor"
+        elif "båt" in lower or "bat" in lower:
+            current_type = "boat"
+
+        comma_row = BILAG_COMMA_ROW_RE.match(line)
+        if comma_row:
+            reg = comma_row.group(1).strip().upper()
+            type_token = comma_row.group(2).strip().lower()
+            model_segment = comma_row.group(3).strip()
+            if reg in seen:
+                continue
+
+            row_type = _type_from_token(type_token) or _infer_type_from_line(current_type, model_segment)
+
+            model_segment = re.split(r"\s+Aktiv fra:\s*\d{2}\.\d{2}\.\d{4}\b", model_segment, maxsplit=1, flags=re.IGNORECASE)[0]
+            model_segment = re.split(r"\s+Avsluttet:\s*\d{2}\.\d{2}\.\d{4}\b", model_segment, maxsplit=1, flags=re.IGNORECASE)[0]
+            model_segment = re.split(r"\s+\d{1,3}(?:\s\d{3}){1,2}\s*$", model_segment, maxsplit=1)[0]
+            model_segment = re.split(r"\s+(?:ja|nei)\b", model_segment, maxsplit=1, flags=re.IGNORECASE)[0]
+            model_segment = re.sub(r"\s{2,}", " ", model_segment).strip(" ,")
+            if not model_segment:
+                model_segment = "Ukjent modell"
+
+            premium_tokens = BILAG_PREMIUM_RE.findall(line)
+            premium = _normalize_digits(premium_tokens[-1]) if premium_tokens else ""
+
+            seen.add(reg)
+            vehicles.append(
+                {
+                    "registration": reg,
+                    "vehicle_type": row_type,
+                    "make_model_year": model_segment,
+                    "coverage": "kasko",
+                    "leasing": "",
+                    "annual_mileage": "",
+                    "bonus": "",
+                    "deductible": "",
+                    "premium": premium,
+                    "sum_insured": "",
+                }
+            )
+            continue
+
+        row_match = BILAG_REG_LINE_RE.match(line)
+        if not row_match:
+            continue
+
+        reg = row_match.group(1).strip().upper()
+        year = row_match.group(2).strip()
+        model_segment = row_match.group(3).strip()
+
+        if reg in seen:
+            continue
+
+        model_segment = re.split(r"\s+\d{2}\.\d{2}\.\d{4}\b", model_segment, maxsplit=1)[0]
+        model_segment = re.split(r"\s+Avsluttet:\s*\d{2}\.\d{2}\.\d{4}\b", model_segment, maxsplit=1, flags=re.IGNORECASE)[0]
+        model_segment = re.split(r"\s+(?:ja|nei)\b", model_segment, maxsplit=1, flags=re.IGNORECASE)[0]
+        model_segment = re.split(r"\s+\d{1,3}(?:\s\d{3})?\s*kr\b", model_segment, maxsplit=1, flags=re.IGNORECASE)[0]
+        model_segment = re.sub(r"\s+\d{9}$", "", model_segment)
+        model_segment = re.sub(r"\s{2,}", " ", model_segment).strip(" ,")
+
+        if not model_segment:
+            model_segment = "Ukjent modell"
+
+        premium_tokens = BILAG_PREMIUM_RE.findall(line)
+        premium = _normalize_digits(premium_tokens[-1]) if premium_tokens else ""
+
+        row_type = _infer_type_from_line(current_type, model_segment)
+        model_with_year = f"{model_segment} {year}".strip()
+
+        seen.add(reg)
+        vehicles.append(
+            {
+                "registration": reg,
+                "vehicle_type": row_type,
+                "make_model_year": model_with_year,
+                "coverage": "kasko",
+                "leasing": "",
+                "annual_mileage": "",
+                "bonus": "",
+                "deductible": "",
+                "premium": premium,
+                "sum_insured": "",
+            }
+        )
+
+    return vehicles
+
+
+def _infer_type_from_line(default_type: str, model_text: str) -> str:
+    txt = (model_text or "").lower()
+    if "tilhenger" in txt:
+        return "trailer"
+    if "traktor" in txt or "atv" in txt or "snøscooter" in txt:
+        return "traktor"
+    if "båt" in txt or "bat" in txt:
+        return "boat"
+    return default_type or "bil"
+
+
+def _type_from_token(type_token: str) -> str:
+    token = (type_token or "").strip().lower()
+    if "tilhenger" in token:
+        return "trailer"
+    if "traktor" in token or "atv" in token or "snøscooter" in token or "snoscooter" in token:
+        return "traktor"
+    if "terrengkjøretøy" in token or "terrengkjoretoy" in token:
+        return "traktor"
+    if "båt" in token or "bat" in token:
+        return "boat"
+    if "moped" in token:
+        return "moped"
+    if "lastebil" in token or "varebil" in token or "personbil" in token:
+        return "bil"
+    return ""
 
 
 def _extract_year(text: str) -> str:
@@ -152,3 +319,7 @@ def _extract_leasing(text: str) -> str:
     if LEASING_MARK_RE.search(text):
         return "Leasing (ukjent selskap/tredjepartsleasing)"
     return ""
+
+
+def _normalize_digits(value: str) -> str:
+    return re.sub(r"\D", "", value or "").strip()

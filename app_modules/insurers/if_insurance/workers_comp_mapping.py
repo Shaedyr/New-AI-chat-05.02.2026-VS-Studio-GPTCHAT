@@ -95,16 +95,22 @@ def _extract_count(line: str) -> str:
         return ""
 
     for candidate in reversed(candidates):
-        value = _digits(candidate)
+        raw = (candidate or "").strip()
+        value = _digits(raw)
         if not value:
             continue
         number = int(value)
+        if number == 0:
+            continue
         # Years and large prices are not counts.
         if 1900 <= number <= 2100:
             continue
         if number > 500:
             continue
-        return value
+        # Avoid count pollution from price tails such as "... 15 000".
+        if len(value) > 3 and not any(sep in raw for sep in (" ", ".", ",")):
+            continue
+        return str(number)
     return ""
 
 

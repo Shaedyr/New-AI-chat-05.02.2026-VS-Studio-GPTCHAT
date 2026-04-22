@@ -4,10 +4,21 @@ from io import BytesIO
 import streamlit as st
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Color, PatternFill
+from openpyxl.worksheet.cell_range import CellRange
 
 from app_modules.insurers.gjensidige.sheet_config import SHEET_MAPPINGS, transform_for_sheet
 
 HEADLINE_COLORS = ["FF0BD7B5", "0BD7B5"]
+
+FORDON_SECTION_ROWS = {
+    "car": {"start": 3, "end": 5},
+    "trailer": {"start": 9, "end": 11},
+    "moped": {"start": 15, "end": 17},
+    "tractor": {"start": 21, "end": 23},
+    "boat": {"start": 27, "end": 29},
+    "other": {"start": 33, "end": 35},
+}
+FORDON_SECTION_ORDER = ["car", "trailer", "moped", "tractor", "boat", "other"]
 
 
 def _should_skip_manual_cell(sheet_name: str, cell_ref: str) -> bool:
@@ -64,6 +75,121 @@ def _apply_cell_style(cell, style_cfg: dict) -> None:
         cell.alignment = new_alignment
 
 
+def _copy_row_style(ws, source_row: int, target_row: int) -> None:
+    if source_row < 1 or target_row < 1:
+        return
+
+    max_col = ws.max_column or 1
+    for col_idx in range(1, max_col + 1):
+        src = ws.cell(row=source_row, column=col_idx)
+        dst = ws.cell(row=target_row, column=col_idx)
+        if src.has_style:
+            dst._style = copy(src._style)
+        if src.number_format:
+            dst.number_format = src.number_format
+
+    src_dim = ws.row_dimensions.get(source_row)
+    if src_dim:
+        dst_dim = ws.row_dimensions[target_row]
+        dst_dim.height = src_dim.height
+        dst_dim.hidden = src_dim.hidden
+        dst_dim.outlineLevel = src_dim.outlineLevel
+        dst_dim.collapsed = src_dim.collapsed
+
+
+def _shift_merged_ranges(ws, insert_at: int, amount: int) -> None:
+    if amount <= 0:
+        return
+
+    merged_ranges = list(ws.merged_cells.ranges)
+    if not merged_ranges:
+        return
+
+    # openpyxl does not reliably shift merged ranges on row insertion.
+    # Rebuild the merged-range set with adjusted coordinates.
+    shifted_ranges = set()
+    for rng in merged_ranges:
+        min_row, max_row = rng.min_row, rng.max_row
+        min_col, max_col = rng.min_col, rng.max_col
+
+        if max_row < insert_at:
+            pass
+        elif min_row >= insert_at:
+            min_row += amount
+            max_row += amount
+        else:
+            # Row insert inside an existing merge -> expand downward.
+            max_row += amount
+
+        shifted_ranges.add(
+            CellRange(
+                min_row=min_row,
+                min_col=min_col,
+                max_row=max_row,
+                max_col=max_col,
+            )
+        )
+
+    ws.merged_cells.ranges = shifted_ranges
+
+
+def _insert_fordon_rows(ws, insert_at: int, amount: int) -> None:
+    if amount <= 0:
+        return
+
+    source_row = max(1, insert_at - 1)
+    ws.insert_rows(insert_at, amount=amount)
+    _shift_merged_ranges(ws, insert_at, amount)
+    for offset in range(amount):
+        _copy_row_style(ws, source_row, insert_at + offset)
+
+
+def _expand_fordon_sections(ws, fordon_expansions: dict) -> dict:
+    cumulative_shift = 0
+    section_layout = {}
+
+    for category in FORDON_SECTION_ORDER:
+        section = FORDON_SECTION_ROWS.get(category)
+        if not section:
+            continue
+
+        extra_rows = int(fordon_expansions.get(category, 0) or 0)
+        if extra_rows < 0:
+            extra_rows = 0
+
+        data_start = int(section["start"]) + cumulative_shift
+        data_end = int(section["end"]) + cumulative_shift + extra_rows
+
+        if extra_rows > 0:
+            insert_at = int(section["end"]) + 1 + cumulative_shift
+            _insert_fordon_rows(ws, insert_at, extra_rows)
+
+        summary_row = data_end + 1
+        section_layout[category] = {
+            "start": data_start,
+            "end": data_end,
+            "summary_row": summary_row,
+        }
+
+        cumulative_shift += extra_rows
+
+    return section_layout
+
+
+def _set_fordon_summary_formulas(ws, section_layout: dict) -> None:
+    for category in FORDON_SECTION_ORDER:
+        layout = section_layout.get(category)
+        if not layout:
+            continue
+
+        start = int(layout["start"])
+        end = int(layout["end"])
+        summary_row = int(layout["summary_row"])
+
+        ws[f"D{summary_row}"] = f"=SUM(D{start}:D{end})"
+        ws[f"J{summary_row}"] = f"=SUM(J{start}:J{end})"
+
+
 def _fill_static_sheet(ws, cell_map: dict, transformed_data: dict) -> int:
     filled = 0
     sheet_name = ws.title
@@ -82,11 +208,19 @@ def _fill_dynamic_sheet(ws, transformed_data: dict) -> int:
     filled = 0
     sheet_name = ws.title
 
+    if not isinstance(transformed_data, dict):
+        return filled
+
+    raw_expansions = transformed_data.pop("_fordon_expansions", {})
+    if (sheet_name or "").strip().lower() == "fordon":
+        expansions = raw_expansions if isinstance(raw_expansions, dict) else {}
+        section_layout = _expand_fordon_sections(ws, expansions)
+        _set_fordon_summary_formulas(ws, section_layout)
+
     cell_styles = {}
-    if isinstance(transformed_data, dict):
-        raw_styles = transformed_data.pop("_cell_styles", {})
-        if isinstance(raw_styles, dict):
-            cell_styles = raw_styles
+    raw_styles = transformed_data.pop("_cell_styles", {})
+    if isinstance(raw_styles, dict):
+        cell_styles = raw_styles
 
     for cell_ref, value in transformed_data.items():
         if not (isinstance(cell_ref, str) and len(cell_ref) >= 2):

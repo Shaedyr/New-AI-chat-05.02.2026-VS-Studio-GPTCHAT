@@ -105,6 +105,9 @@ def _clean_virksomhet(label: str) -> str:
         r"\bkrigsomr",
         r"\btyverisikring\b",
         r"\bforsikrede\b",
+        r"\bbygningsmessig\b",
+        r"\basbest\b",
+        r"\bhms[-\s]?vurdert\b",
         r"\bdekning\b",
         r"\berstatningsgrunnlag\b",
         r"\bforsikringssum\b",
@@ -119,22 +122,36 @@ def _clean_virksomhet(label: str) -> str:
 def _extract_if_entry(pdf_text: str, normalized: str) -> dict:
     entry = dict(DEFAULT_ENTRY)
 
+    ansvar_start = normalized.find("ansvarsforsikring")
+    ansvar_section = normalized[ansvar_start : ansvar_start + 25000] if ansvar_start >= 0 else normalized
+
+    raw_lower = (pdf_text or "").lower()
+    raw_ansvar_start = raw_lower.find("ansvarsforsikring")
+    ansvar_section_raw = pdf_text[raw_ansvar_start : raw_ansvar_start + 25000] if raw_ansvar_start >= 0 else (pdf_text or "")
+
     virksomhet_match = _first_match(
         [
-            r"virksomhet\s*[:\-]?\s*([^\r\n]+)",
-            r"omsetning\s+forsikret\s+virksomhet\s*[:\-]?\s*virksomhet\s+([^\r\n]+)",
+            r"omsetning\s+forsikret\s+virksomhet\s*:\s*virksomhet\s+([a-z0-9æøå/\- ]+?)\s+[0-9][0-9\s.,]{3,}\s*kr",
+            r"virksomhet\s*:\s*([^\r\n]+)",
         ],
-        pdf_text,
+        ansvar_section_raw or pdf_text,
     )
-    if virksomhet_match:
-        entry["virksomhet"] = _clean_virksomhet(virksomhet_match.group(1))
-    if not entry["virksomhet"]:
-        virksomhet_table = _first_match(
-            [r"virksomhet\s+omsetning\s+(.+?)\s+[0-9][0-9\s.,]{3,}\s*kr"],
-            normalized,
+    if not virksomhet_match:
+        virksomhet_match = _first_match(
+            [r"omsetning\s+forsikret\s+virksomhet\s*:\s*virksomhet\s+([a-z0-9aeo/\- ]+?)\s+[0-9][0-9\s.,]{3,}\s*kr"],
+            ansvar_section,
         )
+    if virksomhet_match:
+        candidate = _clean_virksomhet(virksomhet_match.group(1))
+        # Reject generic informational fragments.
+        if candidate and "hovedsakelig" not in candidate.lower():
+            entry["virksomhet"] = candidate
+    if not entry["virksomhet"]:
+        virksomhet_table = _first_match([r"virksomhet\s+omsetning\s+(.+?)\s+[0-9][0-9\s.,]{3,}\s*kr"], ansvar_section)
         if virksomhet_table:
-            entry["virksomhet"] = _clean_virksomhet(virksomhet_table.group(1))
+            candidate = _clean_virksomhet(virksomhet_table.group(1))
+            if candidate and "hovedsakelig" not in candidate.lower():
+                entry["virksomhet"] = candidate
 
     omsetning_match = _first_match(
         [
@@ -145,9 +162,6 @@ def _extract_if_entry(pdf_text: str, normalized: str) -> dict:
     )
     if omsetning_match:
         entry["annual_turnover_2024"] = omsetning_match.group(1)
-
-    ansvar_start = normalized.find("ansvarsforsikring")
-    ansvar_section = normalized[ansvar_start : ansvar_start + 7000] if ansvar_start >= 0 else normalized
 
     bedrift_sum = _first_match(
         [
@@ -170,7 +184,11 @@ def _extract_if_entry(pdf_text: str, normalized: str) -> dict:
         entry["produktansvar"] = produkt_sum.group(1)
 
     egenandel_match = _first_match(
-        [r"egenandel\s+per\s+skade\s*[:\-]?\s*([0-9][0-9\s.,]{3,})"],
+        [
+            r"hvor\s+forsikringen\s+gjelder,\s*bedriftsansvar.{0,120}?egenandel\s+per\s+skade\s*[:\-]?\s*([0-9][0-9\s.,]{3,})",
+            r"bedriftsansvar.{0,160}?egenandel\s+per\s+skade\s*[:\-]?\s*([0-9][0-9\s.,]{3,})",
+            r"egenandel\s+per\s+skade\s*[:\-]?\s*([0-9][0-9\s.,]{3,})",
+        ],
         ansvar_section,
     )
     if egenandel_match and not entry["egenandel_ansvar"]:

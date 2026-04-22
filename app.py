@@ -13,8 +13,21 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    [data-testid="stSidebar"] { display: none !important; }
-    [data-testid="collapsedControl"] { display: none !important; }
+    [data-testid="stSidebar"] {
+      background: #1f2128;
+      border-right: 1px solid #4b5363;
+    }
+
+    [data-testid="collapsedControl"] svg {
+      color: #ffffff !important;
+      fill: #ffffff !important;
+      stroke: #ffffff !important;
+      opacity: 1 !important;
+    }
+
+    [data-testid="stSidebar"] * {
+      color: #ffffff !important;
+    }
 
     [data-testid="stHeader"] {
       background: transparent !important;

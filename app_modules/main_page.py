@@ -6,7 +6,7 @@ from io import BytesIO
 import zipfile
 
 from app_modules.app_mode import is_production_mode
-from app_modules.template_loader import load_template
+from app_modules.template_loader import load_template, refresh_template
 from app_modules.company_data import (
     fetch_company_by_org,
     format_company_data,
@@ -134,6 +134,24 @@ def _build_support_bundle(company_name: str, vehicle_provider: str, merged_field
     return out.getvalue()
 
 
+def _render_sidebar_tools():
+    with st.sidebar:
+        st.markdown("### Verktøy")
+        st.caption("Bruk pilen oppe til venstre for å åpne/lukke denne menyen.")
+
+        loaded_at = st.session_state.get("template_loaded_at")
+        if loaded_at:
+            st.caption(f"Excel-mal sist hentet: {loaded_at}")
+        else:
+            st.caption("Excel-mal er ikke hentet ennå.")
+
+        if st.button("Oppdater Excel-mal nå", key="refresh_template_btn", use_container_width=True):
+            with st.spinner("Henter nyeste Excel-mal fra Google Sheets..."):
+                refresh_template(show_status=False)
+            st.success("Excel-mal oppdatert.")
+            st.rerun()
+
+
 def run():
     st.markdown(
         """
@@ -154,6 +172,10 @@ def run():
         st.session_state.search_results = []
     if "query" not in st.session_state:
         st.session_state.query = ""
+    if "template_loaded_at" not in st.session_state:
+        st.session_state["template_loaded_at"] = None
+
+    _render_sidebar_tools()
 
     # ---------------------------------------------------------
     # STEP 1: SEARCH BAR + RESULT DROPDOWN
@@ -230,13 +252,20 @@ def run():
     # ---------------------------------------------------------
     org_number = st.session_state.selected_company.get("organisasjonsnummer")
 
-    raw_company_data = (
-        fetch_company_by_org(org_number)
-        if org_number
-        else st.session_state.selected_company
-    )
+    # Always prefer BRREG entity lookup, but if that fails we still keep
+    # the selected company from search (never fall back to PDF company name).
+    raw_company_data = fetch_company_by_org(org_number) if org_number else None
+    if not raw_company_data:
+        raw_company_data = st.session_state.selected_company or {}
 
     company_data = format_company_data(raw_company_data)
+
+    # Hard guard: company identity must come from BRREG/search selection,
+    # not from parsed PDF fields.
+    if not company_data.get("company_name"):
+        company_data["company_name"] = st.session_state.selected_company.get("navn", "")
+    if not company_data.get("org_number"):
+        company_data["org_number"] = st.session_state.selected_company.get("organisasjonsnummer", "")
 
     # ---------------------------------------------------------
     # STEP 4: MANUAL FINANCIAL DATA ENTRY
@@ -364,6 +393,9 @@ def run():
             merged_fields = {}
             merged_fields.update(pdf_fields)
             merged_fields.update(company_data)
+            # Ensure these never get sourced from PDF.
+            merged_fields["company_name"] = company_data.get("company_name", "")
+            merged_fields["org_number"] = company_data.get("org_number", "")
             merged_fields["company_summary"] = summary_text
             merged_fields["vehicle_provider"] = vehicle_provider
 
